@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="content-type" content="text/html; charset=utf-8">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1 maximum-scale=1">
+<title>SPARQL Faceter</title>
+
+<link rel="stylesheet" href="bower_components/bootstrap/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="facetedsearch.css">
+
+</head>
+
+<body>
+
+<div id="nav"></div>
+
+<div ng-app="facetApp">
+  <div class="container-fluid" ng-controller="MainController as vm" class="left">
+    <div class="row">
+      <div class="col-md-12">
+        <h1>DBpedia Science Fiction Writers</h1>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-2">
+        <facet-selector
+        ng-if="vm.facets"
+        data-facets="vm.facets"
+        data-update-results="vm.updateResults"
+        data-options="vm.facetOptions"
+        data-disable="vm.disableFacets">
+        </facet-selector>
+      </div>
+
+      <div class="col-md-10">
+        <img src="images/loading-lg.gif" ng-show="vm.isLoadingResults" />
+        <table class="table">
+          <thead>
+            <th>Writer</th>
+            <th>Abstract</th>
+            <th>Genre</th>
+            <th>Birth Place</th>
+            <th>Notable Work</th>
+          </thead>
+          <tbody>
+            <tr ng-repeat="writer in vm.page">
+              <td>
+                <p>{{ writer.name }} ({{ writer.birthDate || '?' }} - {{ writer.deathDate }})
+                </p>
+                <img ng-if="writer.depiction" class="img img-responsive"
+                  ng-src="{{ writer.depiction }}" />
+              </td>
+              <td>{{ writer.abstract }}</td>
+              <td>{{ writer.genre.join(", ") || writer.genre }}</td>
+              <td>{{ writer.birthPlace }}</td>
+              <td>{{ writer.notableWork.join(", ") || writer.notableWork }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <uib-pagination
+        class="pagination-sm"
+        max-size="10"
+        boundary-links="true"
+        rotate="false"
+        total-items="vm.totalCount"
+        ng-model="vm.pageNo"
+        ng-disabled="vm.isLoadingResults"
+        ng-change="vm.getPage()">
+        </uib-pagination>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div id="footer"></div>
+
+<script src="bower_components/jquery/dist/jquery.min.js"></script>
+<script src="bower_components/bootstrap/dist/js/bootstrap.min.js"></script>
+<script src="bower_components/lodash/dist/lodash.min.js"></script>
+<script src="bower_components/angular/angular.js"></script>
+<script src="bower_components/angular-bootstrap/ui-bootstrap-tpls.min.js"></script>
+<script src="bower_components/spin.js/spin.js"></script>
+<script src="bower_components/angular-spinner/angular-spinner.min.js"></script>
+<script src="bower_components/angular-paging-sparql-service/dist/sparql-service.js"></script>
+<script src="bower_components/angular-semantic-faceted-search/dist/semantic-faceted-search.js"></script>
+
+<script src="dbpedia-service.js"></script>
+<script src="demo-controller.js"></script>
+</body>
+</html>

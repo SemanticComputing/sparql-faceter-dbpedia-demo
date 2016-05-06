@@ -1,0 +1,23 @@
+{
+  "name": "faceter-dbpedia-demo",
+  "description": "",
+  "main": "",
+  "authors": [
+    "Erkki Heino <erkki.heino@aalto.fi>"
+  ],
+  "license": "MIT",
+  "moduleType": [],
+  "homepage": "",
+  "private": true,
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ],
+  "dependencies": {
+    "angular-semantic-faceted-search": "sparql-faceter#master",
+    "bootstrap": "~3.3.6"
+  }
+}
