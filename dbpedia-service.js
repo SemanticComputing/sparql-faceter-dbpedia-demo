@@ -3,22 +3,31 @@
     'use strict';
 
     /* eslint-disable angular/no-service-method */
+
+    // Module definition, note the dependency.
     angular.module('facetApp', ['seco.facetedSearch'])
 
     /*
      * DBpedia service
+     * Handles SPARQL queries and defines facet configurations.
      */
     .service('dbpediaService', dbpediaService);
 
     /* @ngInject */
     function dbpediaService(FacetResultHandler) {
 
+        /* Public API */
+
+        // Get the results from DBpedia based on the facet selections.
         this.getResults = getResults;
+        // Get the facet definitions.
         this.getFacets = getFacets;
+        // Get the facet options.
         this.getFacetOptions = getFacetOptions;
 
+        /* Implementation */
 
-        // Facet definitions (basic facets)
+        // Facet definitions (using basic facets)
         var facets = {
             '<http://dbpedia.org/ontology/genre>': {
                 enabled: true,
@@ -55,9 +64,10 @@
         ' PREFIX dbo: <http://dbpedia.org/ontology/>' +
         ' PREFIX foaf: <http://xmlns.com/foaf/0.1/>';
 
-        // resultSet is a subquery that returns the URIs of the results
+        // resultSet is a subquery that returns the URIs (?id) of the results
         // with <FACET_SELECTIONS> as a placeholder for the facet selections
         // and <PAGE> as a placeholder for paging.
+        // The idea is to page the result set (the ids) only, not the entire query.
         var resultSet =
         ' SELECT DISTINCT ?id { ' +
         '  <FACET_SELECTIONS> ' +
@@ -70,6 +80,8 @@
         var resultSetQry = prefixes + resultSet;
 
         // This is the actual result query with all optional data.
+        // (Using a placeholder and string replace for the result set
+        // so that it doesn't need to be written twice).
         var query = prefixes +
         ' SELECT * WHERE {' +
         '  { ' +
@@ -106,20 +118,26 @@
         '  }' +
         ' }';
 
+        // Add the result set to the query.
         query = query.replace(/<RESULTSET>/g, resultSet);
 
         // FacetResultHandler is a service that queries the endpoint with
         // the query and maps the results to objects.
         var resultHandler = new FacetResultHandler(endpointUrl, facets);
 
+        // This function receives the facet selections from the controller
+        // and gets the results from DBpedia.
+        // Returns a proimise.
         function getResults(facetSelections) {
             return resultHandler.getResults(facetSelections, query, resultSetQry);
         }
 
+        // Getter for the facet definitions.
         function getFacets() {
             return facets;
         }
 
+        // Getter for the facet options.
         function getFacetOptions() {
             return facetOptions;
         }

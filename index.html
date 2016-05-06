@@ -25,15 +25,17 @@
     </div>
     <div class="row">
       <div class="col-md-2">
+        <!-- Facets are defined here using the configurations defined in the controller -->
         <facet-selector
-        ng-if="vm.facets"
-        data-facets="vm.facets"
-        data-update-results="vm.updateResults"
-        data-options="vm.facetOptions"
-        data-disable="vm.disableFacets">
+          ng-if="vm.facets"
+          data-facets="vm.facets"
+          data-update-results="vm.updateResults"
+          data-options="vm.facetOptions"
+          data-disable="vm.disableFacets">
         </facet-selector>
       </div>
 
+      <!-- Results view -->
       <div class="col-md-10">
         <img src="images/loading-lg.gif" ng-show="vm.isLoadingResults" />
         <table class="table">
@@ -60,15 +62,16 @@
             </tr>
           </tbody>
         </table>
+        <!-- Pagination -->
         <uib-pagination
-        class="pagination-sm"
-        max-size="10"
-        boundary-links="true"
-        rotate="false"
-        total-items="vm.totalCount"
-        ng-model="vm.pageNo"
-        ng-disabled="vm.isLoadingResults"
-        ng-change="vm.getPage()">
+          class="pagination-sm"
+          max-size="10"
+          boundary-links="true"
+          rotate="false"
+          total-items="vm.totalCount"
+          ng-model="vm.pageNo"
+          ng-disabled="vm.isLoadingResults"
+          ng-change="vm.getPage()">
         </uib-pagination>
       </div>
     </div>
