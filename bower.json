@@ -18,6 +18,6 @@
   ],
   "dependencies": {
     "bootstrap": "~3.3.6",
-    "angular-semantic-faceted-search": "sparql-faceter#^0.2.1"
+    "angular-semantic-faceted-search": "sparql-faceter#^0.2.2"
   }
 }
