@@ -18,6 +18,7 @@
         this.getFacetOptions = getFacetOptions;
 
 
+        // Facet definitions (basic facets)
         var facets = {
             '<http://dbpedia.org/ontology/genre>': {
                 enabled: true,
@@ -36,6 +37,7 @@
 
         // Restrict to writers in the (hard) science fiction genre.
         // This is completely optional.
+        // The subject variable in the constraint should be "?s".
         var constraint =
             '{ ?s <http://dbpedia.org/ontology/genre> <http://dbpedia.org/resource/Science_fiction> . } ' +
             'UNION { ?s <http://dbpedia.org/ontology/genre> <http://dbpedia.org/resource/Hard_science_fiction> . } ';
@@ -53,17 +55,21 @@
         ' PREFIX dbo: <http://dbpedia.org/ontology/>' +
         ' PREFIX foaf: <http://xmlns.com/foaf/0.1/>';
 
+        // resultSet is a subquery that returns the URIs of the results
+        // with <FACET_SELECTIONS> as a placeholder for the facet selections
+        // and <PAGE> as a placeholder for paging.
         var resultSet =
-        ' SELECT ?id { ' +
-        '     <FACET_SELECTIONS> ' +
-              constraint +
-        '     ?s a dbo:Writer .' +
-        '     BIND(?s AS ?id) ' +
+        ' SELECT DISTINCT ?id { ' +
+        '  <FACET_SELECTIONS> ' +
+           constraint +
+        '  ?s a dbo:Writer .' +
+        '  BIND(?s AS ?id) ' +
         ' } ORDER BY ?id ' +
         ' <PAGE> ';
 
         var resultSetQry = prefixes + resultSet;
 
+        // This is the actual result query with all optional data.
         var query = prefixes +
         ' SELECT * WHERE {' +
         '  { ' +
@@ -102,6 +108,8 @@
 
         query = query.replace(/<RESULTSET>/g, resultSet);
 
+        // FacetResultHandler is a service that queries the endpoint with
+        // the query and maps the results to objects.
         var resultHandler = new FacetResultHandler(endpointUrl, facets);
 
         function getResults(facetSelections) {
