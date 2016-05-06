@@ -7,7 +7,6 @@
 <title>SPARQL Faceter</title>
 
 <link rel="stylesheet" href="bower_components/bootstrap/dist/css/bootstrap.min.css">
-
 </head>
 
 <body>
@@ -15,10 +14,13 @@
 <div id="nav"></div>
 
 <div ng-app="facetApp">
-  <div class="container-fluid" ng-controller="MainController as vm" class="left">
+  <div class="container-fluid" ng-controller="MainController as vm">
     <div class="row">
       <div class="col-md-12">
         <h1>DBpedia Science Fiction Writers</h1>
+        <div ng-if="vm.error">
+          <uib-alert type="danger">{{ vm.error }}</uib-alert>
+        </div>
       </div>
     </div>
     <div class="row">
@@ -36,17 +38,18 @@
         <img src="images/loading-lg.gif" ng-show="vm.isLoadingResults" />
         <table class="table">
           <thead>
-            <th>Writer</th>
-            <th>Abstract</th>
-            <th>Genre</th>
-            <th>Birth Place</th>
-            <th>Notable Work</th>
+            <tr>
+              <th>Writer</th>
+              <th>Abstract</th>
+              <th>Genre</th>
+              <th>Birth Place</th>
+              <th>Notable Work</th>
+            </tr>
           </thead>
           <tbody>
             <tr ng-repeat="writer in vm.page">
               <td>
-                <p>{{ writer.name }} ({{ writer.birthDate || '?' }} - {{ writer.deathDate }})
-                </p>
+                <p>{{ writer.name }} ({{ writer.birthDate || '?' }} - {{ writer.deathDate }})</p>
                 <img ng-if="writer.depiction" class="img img-responsive"
                   ng-src="{{ writer.depiction }}" />
               </td>
@@ -68,7 +71,6 @@
         ng-change="vm.getPage()">
         </uib-pagination>
       </div>
-
     </div>
   </div>
 </div>
