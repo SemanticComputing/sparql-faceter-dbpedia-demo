@@ -27,8 +27,15 @@
 
         /* Implementation */
 
-        // Facet definitions (using basic facets)
+        // Facet definitions
         var facets = {
+            // Text search facet for names
+            '<http://www.w3.org/2000/01/rdf-schema#label>': {
+                type: 'text',
+                enabled: true,
+                name: 'Name'
+            },
+            // Basic facets
             '<http://dbpedia.org/ontology/genre>': {
                 enabled: true,
                 name: 'Genre'
@@ -52,10 +59,10 @@
             'UNION { ?s <http://dbpedia.org/ontology/genre> <http://dbpedia.org/resource/Hard_science_fiction> . } ';
 
         var facetOptions = {
-            endpointUrl: endpointUrl,
-            rdfClass: '<http://dbpedia.org/ontology/Writer>',
-            constraint: constraint,
-            preferredLang : 'en'
+            endpointUrl: endpointUrl, // required
+            rdfClass: '<http://dbpedia.org/ontology/Writer>', // optional
+            constraint: constraint, // optional
+            preferredLang : 'en' // required
         };
 
         var prefixes =
