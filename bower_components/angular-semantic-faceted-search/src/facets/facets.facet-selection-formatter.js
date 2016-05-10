@@ -8,8 +8,8 @@
 
     /* ngInject */
     function facetSelectionFormatter(_) {
+
         this.parseFacetSelections = parseFacetSelections;
-        this.parseBasicFacet = parseBasicFacet;
 
         var resourceTimeSpanFilterTemplate =
         ' ?s <TIME_SPAN_PROPERTY> ?time_span_uri . ' +
@@ -35,16 +35,26 @@
         var resourceTimeSpanUri = '?time_span_uri';
 
         function parseFacetSelections(facets, facetSelections) {
+            // Put hierarchy facets first and text facets last, and
+            // sort the selections by count for optimization
             var otherFacets = [];
+            var hierarchyFacets = [];
             var textFacets = [];
-            _.forOwn(facetSelections, function(facet, id) {
-                if (facets[id].type === 'text') {
-                    textFacets.push({ id: id, val: facet });
+            var sorted = _(facetSelections).map(function(o, k) {
+                return { id: k, val: o };
+            }).sortBy(facetSelections, 'val.count').value();
+
+            _.forEach(sorted, function(facet) {
+                if (facets[facet.id].type === 'text') {
+                    textFacets.push(facet);
+                } else if (facets[facet.id].type === 'hierarchy') {
+                    hierarchyFacets.push(facet);
                 } else {
-                    otherFacets.push({ id: id, val: facet });
+                    otherFacets.push(facet);
                 }
             });
-            var selections = textFacets.concat(otherFacets);
+
+            var selections = hierarchyFacets.concat(otherFacets).concat(textFacets);
 
             var result = '';
             var i = 0;
@@ -85,13 +95,13 @@
             if (_.isArray(val)) {
                 val.forEach(function(value) {
                     result = result + hVar + ' ' + hierarchyProp + ' ' + value.value + ' . ';
-                    result = result + ' ?s ' + key + ' ' + hVar + ' . ';
+                    result = result + ' ?s ' + key + hVar + ' . ';
                     hVar = hVar + '_' + i++;
                 });
                 return result;
             }
             result = hVar + ' ' + hierarchyProp + ' ' + val.value + ' . ';
-            return result = result + ' ?s ' + key + ' ' + hVar + ' . ';
+            return result = result + ' ?s ' + key + hVar + ' . ';
         }
 
         function parseBasicFacet(val, key) {
@@ -105,14 +115,15 @@
             return ' ?s ' + key + ' ' + val.value + ' . ';
         }
 
-        function parseTextFacet(val, key, i) {
-            var result = ' ?s text:query "' + val.value + '*" . ';
-            var textVar = ' ?text' + i;
+        function parseTextFacet(val, key, i, useJenaText) {
+            var result = useJenaText ? ' ?s text:query "' + val.value + '*" . ' : '';
+            var textVar = '?text' + i;
             result = result + ' ?s ' + key + ' ' + textVar + ' . ';
             var words = val.value.replace(/[?,._*'\\/-]/g, '');
 
             words.split(' ').forEach(function(word) {
-                result = result + ' FILTER(REGEX(' + textVar + ', "' + word + '", "i")) ';
+                result = result + ' FILTER(CONTAINS(LCASE(' + textVar + '), "' +
+                        word.toLowerCase() + '")) ';
             });
 
             return result;
@@ -162,5 +173,13 @@
         function dateToISOString(date) {
             return date.toISOString().slice(0, 10);
         }
+
+        /* Exposed for testing purposes only */
+
+        this.parseBasicFacet = parseBasicFacet;
+        this.parseTimeSpanFacet = parseTimeSpanFacet;
+        this.parseTextFacet = parseTextFacet;
+        this.parseBasicFacet = parseBasicFacet;
+        this.parseHierarchyFacet = parseHierarchyFacet;
     }
 })();
