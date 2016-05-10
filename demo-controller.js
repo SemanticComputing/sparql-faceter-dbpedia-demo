@@ -1,8 +1,3 @@
-/*
- * Semantic faceted search
- *
- */
-
 (function() {
 
     'use strict';
@@ -10,25 +5,31 @@
     angular.module('facetApp')
 
     /*
-    * Controller for the results view.
+    * The controller.
     */
-    .controller( 'MainController', function (dbpediaService, facetUrlStateHandlerService) {
+    .controller('MainController', MainController);
 
+    /* @ngInject */
+    function MainController(dbpediaService, facetUrlStateHandlerService) {
         var vm = this;
 
-        vm.facetOptions = getFacetOptions();
+        // Get the facet configurations from dbpediaService.
         vm.facets = dbpediaService.getFacets();
-        vm.disableFacets = disableFacets;
+        vm.facetOptions = getFacetOptions();
 
+        // page is the current page of results.
         vm.page = [];
         vm.pageNo = 0;
         vm.getPage = getPage;
+
+        vm.disableFacets = disableFacets;
 
         // Disable the facets while reusults are being retrieved.
         function disableFacets() {
             return vm.isLoadingResults;
         }
 
+        // Setup the facet options.
         function getFacetOptions() {
             var options = dbpediaService.getFacetOptions();
             options.updateResults = updateResults;
@@ -56,9 +57,12 @@
         // Angular-UI pagination handles the page number changes.
         function getPage() {
             vm.isLoadingResults = true;
+            // getTotalCount calculates the total number of result objects.
             vm.pager.getTotalCount().then(function(count) {
                 vm.totalCount = count;
             }).then(function() {
+                // Get the page.
+                // (The pager uses 0-indexed pages, whereas Angular-UI pagination uses 1-indexed pages).
                 return vm.pager.getPage(vm.pageNo-1);
             }).then(function(page) {
                 vm.page = page;
@@ -68,6 +72,5 @@
                 vm.isLoadingResults = false;
             });
         }
-
-    });
+    }
 })();
