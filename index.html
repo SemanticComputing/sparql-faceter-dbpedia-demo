@@ -42,7 +42,7 @@
           <thead>
             <tr>
               <th>Writer</th>
-              <th>Abstract</th>
+              <th>Abstract / Works</th>
               <th>Genre</th>
               <th>Birth Place</th>
               <th>Notable Work</th>
@@ -50,12 +50,18 @@
           </thead>
           <tbody>
             <tr ng-repeat="writer in vm.page">
-              <td>
-                <p>{{ writer.name }} ({{ writer.birthDate || '?' }} - {{ writer.deathDate }})</p>
+              <td style="width:21%">
+                <p>
+                <a ng-href="{{ writer.wikipediaLink || writer.id }}">{{ writer.name }}</a>
+                  <span ng-if="writer.birthDate || writer.deathDate">({{ (writer.birthDate|date) || '?' }} - {{ writer.deathDate|date }})</span>
+                </p>
                 <img ng-if="writer.depiction" class="img img-responsive"
                   ng-src="{{ writer.depiction }}" />
               </td>
-              <td>{{ writer.abstract }}</td>
+              <td>
+                <p>{{ writer.abstract }}</p>
+                <p><span ng-repeat="work in writer.workLink"><a ng-href="{{ work }}">{{ writer.workLabel[$index] }}{{ $last ? '' : '; ' }}</span></p>
+              </td>
               <td>{{ writer.genre.join(", ") || writer.genre }}</td>
               <td>{{ writer.birthPlace }}</td>
               <td>{{ writer.notableWork.join(", ") || writer.notableWork }}</td>
