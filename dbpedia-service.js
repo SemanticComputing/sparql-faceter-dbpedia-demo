@@ -55,9 +55,13 @@
         // This is completely optional.
         // The subject variable in the constraint should be "?s".
         var constraint =
-            '{ ?s <http://dbpedia.org/ontology/genre> <http://dbpedia.org/resource/Science_fiction> . } ' +
-            'UNION { ?s <http://dbpedia.org/ontology/genre> <http://dbpedia.org/resource/Hard_science_fiction> . } ';
+        '{ ?s <http://dbpedia.org/ontology/genre> <http://dbpedia.org/resource/Science_fiction> . } UNION ' +
+        '{ ?s <http://dbpedia.org/ontology/genre> <http://dbpedia.org/resource/Hard_science_fiction> . } ';
 
+        // Both rdfClass and constraint are optional, but you will most likely want to
+        // define at least one of them, or you might get bad results when there are no
+        // facet selections.
+        // rdfClass is just a shorthand constraint for '?s a <rdfClass> .'
         var facetOptions = {
             endpointUrl: endpointUrl, // required
             rdfClass: '<http://dbpedia.org/ontology/Writer>', // optional
@@ -71,29 +75,15 @@
         ' PREFIX dbo: <http://dbpedia.org/ontology/>' +
         ' PREFIX foaf: <http://xmlns.com/foaf/0.1/>';
 
-        // resultSet is a subquery that returns the URIs (?id) of the results
-        // with <FACET_SELECTIONS> as a placeholder for the facet selections
-        // and <PAGE> as a placeholder for paging.
-        // The idea is to page the result set (the ids) only, not the entire query.
-        var resultSet =
-        ' SELECT DISTINCT ?id { ' +
-        '  <FACET_SELECTIONS> ' +
-           constraint +
-        '  ?s a dbo:Writer .' +
-        '  BIND(?s AS ?id) ' +
-        ' } ORDER BY ?id ' +
-        ' <PAGE> ';
-
-        var resultSetQry = prefixes + resultSet;
-
-        // This is the actual result query with all optional data.
-        // (Using a placeholder and string replace for the result set
-        // so that it doesn't need to be written twice).
-        var query = prefixes +
+        // This is the result query, with <RESULT_SET> as a placeholder for
+        // the result set subquery that is formed from the facet selections.
+        // The variable names used in the query will be the property names of
+        // the reusulting mapped objects.
+        // Note that ?id is the variable used for the result resource here, and not ?s,
+        // as in the constraint option.
+        var queryTemplate =
         ' SELECT * WHERE {' +
-        '  { ' +
-        '    <RESULTSET> ' +
-        '  } ' +
+        '  <RESULT_SET> ' +
         '  OPTIONAL { '+
         '   ?id rdfs:label ?name . ' +
         '   FILTER(langMatches(lang(?name), "en")) ' +
@@ -105,7 +95,14 @@
         '   ?id dbp:deathDate ?deathDate . ' +
         '  }' +
         '  OPTIONAL { ' +
-        '   ?id foaf:depiction ?depiction . ' +
+        '   ?id dbo:thumbnail ?depiction . ' +
+        '  }' +
+        '  OPTIONAL { ' +
+        '   ?workId dbo:author ?id ; rdfs:label ?workLabel ; foaf:isPrimaryTopicOf ?workLink .' +
+        '   FILTER(langMatches(lang(?workLabel), "en")) ' +
+        '  }' +
+        '  OPTIONAL { ' +
+        '   ?id foaf:isPrimaryTopicOf ?wikipediaLink . ' +
         '  }' +
         '  OPTIONAL { ' +
         '   ?id dbp:birthPlace ?birthPlace . ' +
@@ -125,18 +122,28 @@
         '  }' +
         ' }';
 
-        // Add the result set to the query.
-        query = query.replace(/<RESULTSET>/g, resultSet);
+        var resultOptions = {
+            prefixes: prefixes, // required if the queryTemplate uses prefixes
+            queryTemplate: queryTemplate, // required
+            resultsPerPage: 10, // optional (default is 10)
+            pagesPerQuery: 1, // optional (default is 1)
+            paging: true // optional (default is true), if true, enable paging of the results
+        };
 
         // FacetResultHandler is a service that queries the endpoint with
         // the query and maps the results to objects.
-        var resultHandler = new FacetResultHandler(endpointUrl, facets);
+        var resultHandler = new FacetResultHandler(endpointUrl, facets, facetOptions,
+                resultOptions);
 
         // This function receives the facet selections from the controller
         // and gets the results from DBpedia.
-        // Returns a proimise.
+        // Returns a promise.
         function getResults(facetSelections) {
-            return resultHandler.getResults(facetSelections, query, resultSetQry);
+            // If there are variables used in the constraint option (see above),
+            // you can also give getResults another parameter that is the sort
+            // order of the results (as a valid SPARQL ORDER BY sequence, e.g. "?id").
+            // The results are sorted by URI (?id) by default.
+            return resultHandler.getResults(facetSelections);
         }
 
         // Getter for the facet definitions.
