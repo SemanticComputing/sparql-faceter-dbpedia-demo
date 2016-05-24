@@ -1,6 +1,6 @@
 {
   "name": "angular-semantic-faceted-search",
-  "version": "0.3.0",
+  "version": "0.4.1",
   "authors": [
     "Erkki Heino <erkki.heino@aalto.fi>",
     "Mikko Koho <mikko.koho@aalto.fi>"
@@ -27,13 +27,13 @@
     "test",
     "tests"
   ],
-  "_release": "0.3.0",
+  "_release": "0.4.1",
   "_resolution": {
     "type": "version",
-    "tag": "0.3.0",
-    "commit": "81707423f48bd2f8e218d45b0de69cbdf78c0834"
+    "tag": "0.4.1",
+    "commit": "f5d87823ede4f72ceb2b788a0c7c86ef2d166d09"
   },
   "_source": "https://github.com/SemanticComputing/angular-semantic-faceted-search.git",
-  "_target": "^0.3.0",
+  "_target": "^0.4.1",
   "_originalSource": "sparql-faceter"
 }
