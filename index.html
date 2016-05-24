@@ -60,7 +60,7 @@
               </td>
               <td>
                 <p>{{ writer.abstract }}</p>
-                <p><span ng-repeat="work in writer.workLink"><a ng-href="{{ work }}">{{ writer.workLabel[$index] }}{{ $last ? '' : '; ' }}</span></p>
+                <p><span ng-repeat="work in writer.workLink track by $index"><a ng-href="{{ work }}">{{ writer.workLabel[$index] }}{{ $last ? '' : '; ' }}</span></p>
               </td>
               <td>{{ writer.genre.join(", ") || writer.genre }}</td>
               <td>{{ writer.birthPlace }}</td>
