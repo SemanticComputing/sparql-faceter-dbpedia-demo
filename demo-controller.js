@@ -21,6 +21,7 @@
         vm.page = [];
         vm.pageNo = 0;
         vm.getPage = getPage;
+        vm.makeArray = makeArray;
 
         vm.disableFacets = disableFacets;
 
@@ -71,6 +72,10 @@
                 vm.error = error;
                 vm.isLoadingResults = false;
             });
+        }
+
+        function makeArray(val) {
+            return angular.isArray(val) ? val : [val];
         }
     }
 })();
