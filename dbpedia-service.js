@@ -81,6 +81,10 @@
         // the reusulting mapped objects.
         // Note that ?id is the variable used for the result resource here, and not ?s,
         // as in the constraint option.
+        // Variable names with a '__' (double underscore) in them will results in
+        // an object. I.e. here ?work__id, ?work__label, and ?work__link will be
+        // combined into an object:
+        // writer.work = { id: '[work id]', label: '[work label]', link: '[work link]' }
         var queryTemplate =
         ' SELECT * WHERE {' +
         '  <RESULT_SET> ' +
@@ -98,8 +102,10 @@
         '   ?id dbo:thumbnail ?depiction . ' +
         '  }' +
         '  OPTIONAL { ' +
-        '   ?workId dbo:author ?id ; rdfs:label ?workLabel ; foaf:isPrimaryTopicOf ?workLink .' +
-        '   FILTER(langMatches(lang(?workLabel), "en")) ' +
+        '   ?work__id dbo:author ?id ; ' +
+        '    rdfs:label ?work__label ; ' +
+        '    foaf:isPrimaryTopicOf ?work__link . ' +
+        '   FILTER(langMatches(lang(?work__label), "en")) ' +
         '  }' +
         '  OPTIONAL { ' +
         '   ?id foaf:isPrimaryTopicOf ?wikipediaLink . ' +
@@ -113,11 +119,11 @@
         '   FILTER(langMatches(lang(?abstract), "en")) ' +
         '  }' +
         '  OPTIONAL { ' +
-        '   ?id dbo:genre [ rdfs:label ?genre ] . ' +
+        '   ?id dbo:genre/rdfs:label ?genre . ' +
         '   FILTER(langMatches(lang(?genre), "en")) ' +
         '  }' +
         '  OPTIONAL { ' +
-        '   ?id dbo:notableWork [ rdfs:label ?notableWork ] . ' +
+        '   ?id dbo:notableWork/rdfs:label ?notableWork . ' +
         '   FILTER(langMatches(lang(?notableWork), "en")) ' +
         '  }' +
         ' }';
