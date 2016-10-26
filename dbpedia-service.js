@@ -30,21 +30,29 @@
         // Facet definitions
         var facets = {
             // Text search facet for names
-            '<http://www.w3.org/2000/01/rdf-schema#label>': {
-                type: 'text',
+            name: {
+                facetId: 'name',
+                predicate:'<http://www.w3.org/2000/01/rdf-schema#label>',
                 enabled: true,
                 name: 'Name'
             },
             // Basic facets
-            '<http://dbpedia.org/ontology/genre>': {
+            genre: {
+                facetId: 'genre',
+                predicate: '<http://dbpedia.org/ontology/genre>',
                 enabled: true,
                 name: 'Genre'
             },
-            '<http://dbpedia.org/ontology/birthPlace>': {
+            birthPlace: {
+                facetId: 'birthPlace',
+                predicate:'<http://dbpedia.org/ontology/birthPlace>',
                 enabled: true,
                 name: 'Birth Place'
             },
-            '<http://dbpedia.org/ontology/citizenship>': {
+            citizenship: {
+                facetId: 'citizenship',
+                predicate: '<http://dbpedia.org/ontology/citizenship>',
+                enabled: true,
                 name: 'Citizenship'
             }
         };
@@ -53,19 +61,18 @@
 
         // Restrict to writers in the (hard) science fiction genre.
         // This is completely optional.
-        // The subject variable in the constraint should be "?s".
-        var constraint =
-        '{ ?s <http://dbpedia.org/ontology/genre> <http://dbpedia.org/resource/Science_fiction> . } UNION ' +
-        '{ ?s <http://dbpedia.org/ontology/genre> <http://dbpedia.org/resource/Hard_science_fiction> . } ';
+        // The subject variable in the constraint should be "?id".
+        //var constraint =
+        //'?id <http://dbpedia.org/ontology/genre> <http://dbpedia.org/resource/Science_fiction> .';
 
         // Both rdfClass and constraint are optional, but you will most likely want to
         // define at least one of them, or you might get bad results when there are no
         // facet selections.
-        // rdfClass is just a shorthand constraint for '?s a <rdfClass> .'
+        // rdfClass is just a shorthand constraint for '?id a <rdfClass> .'
         var facetOptions = {
             endpointUrl: endpointUrl, // required
             rdfClass: '<http://dbpedia.org/ontology/Writer>', // optional
-            constraint: constraint, // optional
+            //constraint: constraint, // optional
             preferredLang : 'en' // required
         };
 
@@ -79,7 +86,7 @@
         // the result set subquery that is formed from the facet selections.
         // The variable names used in the query will be the property names of
         // the reusulting mapped objects.
-        // Note that ?id is the variable used for the result resource here, and not ?s,
+        // Note that ?id is the variable used for the result resource here,
         // as in the constraint option.
         // Variable names with a '__' (double underscore) in them will results in
         // an object. I.e. here ?work__id, ?work__label, and ?work__link will be
