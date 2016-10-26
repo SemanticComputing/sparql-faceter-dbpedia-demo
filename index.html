@@ -7,6 +7,7 @@
 <title>SPARQL Faceter</title>
 
 <link rel="stylesheet" href="bower_components/bootstrap/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="bower_components/sparql-faceter/dist/semantic-faceted-search.css">
 </head>
 
 <body>
@@ -17,7 +18,7 @@
   <div class="container-fluid" ng-controller="MainController as vm">
     <div class="row">
       <div class="col-md-12">
-        <h1>DBpedia Science Fiction Writers</h1>
+        <h1>DBpedia Writers</h1>
         <div ng-if="vm.error">
           <uib-alert type="danger">{{ vm.error }}</uib-alert>
         </div>
@@ -26,13 +27,10 @@
     <div class="row">
       <div class="col-md-2">
         <!-- Facets are defined here using the configurations defined in the controller -->
-        <facet-selector
-          ng-if="vm.facets"
-          data-facets="vm.facets"
-          data-update-results="vm.updateResults"
-          data-options="vm.facetOptions"
-          data-disable="vm.disableFacets">
-        </facet-selector>
+        <seco-text-facet data-options="vm.facets.name"></seco-text-facet>
+        <seco-basic-facet data-options="vm.facets.genre"></seco-basic-facet>
+        <seco-basic-facet data-options="vm.facets.birthPlace"></seco-basic-facet>
+        <seco-basic-facet data-options="vm.facets.citizenship"></seco-basic-facet>
       </div>
 
       <!-- Results view -->
@@ -95,7 +93,7 @@
 <script src="bower_components/spin.js/spin.js"></script>
 <script src="bower_components/angular-spinner/angular-spinner.min.js"></script>
 <script src="bower_components/angular-paging-sparql-service/dist/sparql-service.js"></script>
-<script src="bower_components/angular-semantic-faceted-search/dist/semantic-faceted-search.js"></script>
+<script src="bower_components/sparql-faceter/dist/semantic-faceted-search.js"></script>
 
 <script src="dbpedia-service.js"></script>
 <script src="demo-controller.js"></script>

@@ -10,12 +10,8 @@
     .controller('MainController', MainController);
 
     /* @ngInject */
-    function MainController(dbpediaService, facetUrlStateHandlerService) {
+    function MainController($scope, FacetHandler, dbpediaService, facetUrlStateHandlerService) {
         var vm = this;
-
-        // Get the facet configurations from dbpediaService.
-        vm.facets = dbpediaService.getFacets();
-        vm.facetOptions = getFacetOptions();
 
         // page is the current page of results.
         vm.page = [];
@@ -25,22 +21,39 @@
 
         vm.disableFacets = disableFacets;
 
+        // Listen for the facet events
+        // This event is triggered when a facet's selection has changed.
+        $scope.$on('sf-facet-constraints', updateResults);
+        // This is the initial configuration event
+        var initListener = $scope.$on('sf-initial-constraints', function(event, cons) {
+            updateResults(event, cons);
+            // Only listen once, then unregister
+            initListener();
+        });
+
+        // Get the facet configurations from dbpediaService.
+        vm.facets = dbpediaService.getFacets();
+        // Initialize the facet handler
+        vm.handler = new FacetHandler(getFacetOptions());
+
         // Disable the facets while reusults are being retrieved.
         function disableFacets() {
             return vm.isLoadingResults;
         }
 
-        // Setup the facet options.
+        // Setup the FacetHandler options.
         function getFacetOptions() {
             var options = dbpediaService.getFacetOptions();
-            options.updateResults = updateResults;
+            options.scope = $scope;
+
             // Get initial facet values from URL parameters (refresh/bookmark) using facetUrlStateHandlerService.
-            options.initialValues = facetUrlStateHandlerService.getFacetValuesFromUrlParams();
+            options.initialState = facetUrlStateHandlerService.getFacetValuesFromUrlParams();
             return options;
         }
 
+
         // Get results based on facet selections (each time the selections change).
-        function updateResults(facetSelections) {
+        function updateResults(event, facetSelections) {
             // Update the URL parameters based on facet selections
             facetUrlStateHandlerService.updateUrlParams(facetSelections);
             vm.isLoadingResults = true;
