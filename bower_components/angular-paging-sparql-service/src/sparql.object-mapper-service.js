@@ -38,7 +38,7 @@
                 // If the variable name contains "__", an object
                 // will be created as the value
                 // E.g. { place__id: '1' } -> { place: { id: '1' } }
-                _.set(o, key.replace('__', '.'), value.value);
+                _.set(o, key.replace(/__/g, '.'), value.value);
             });
 
             return o;

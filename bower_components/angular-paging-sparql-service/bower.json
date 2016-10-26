@@ -1,6 +1,6 @@
 {
   "name": "angular-paging-sparql-service",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "authors": [
     "Erkki Heino <erkki.heino@aalto.fi>"
   ],
@@ -10,8 +10,8 @@
   "license": "MIT",
   "homepage": "",
   "dependencies": {
-    "angular": ">=1.4.8",
-    "lodash": "~4.0.0"
+    "angular": "^1.4.8",
+    "lodash": "^4.0.0"
   },
   "ignore": [
     "**/.*",

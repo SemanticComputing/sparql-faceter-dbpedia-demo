@@ -17,12 +17,32 @@
     .factory('SparqlService', SparqlService);
 
     /* ngInject */
-    function SparqlService($http, $q) {
-        return function(endpointUrl) {
+    function SparqlService($http, $q, _) {
+        return function(configuration) {
 
-            var executeQuery = function(sparqlQry) {
-                return $http.get(endpointUrl + '?query=' + encodeURIComponent(sparqlQry) + '&format=json');
-            };
+            if (_.isString(configuration)) {
+                // Backwards compatibility
+                configuration = { endpointUrl: configuration };
+            }
+
+            var defaultConfig = { usePost: false };
+
+            var config = angular.extend({}, defaultConfig, configuration);
+
+            var executeQuery = config.usePost ? post : get;
+
+            function get(qry) {
+                return $http.get(config.endpointUrl + '?query=' + encodeURIComponent(qry) + '&format=json');
+            }
+
+            function post(qry) {
+                var data = 'query=' + encodeURIComponent(qry);
+                var conf = { headers: {
+                    'Accept': 'application/sparql-results+json',
+                    'Content-type' : 'application/x-www-form-urlencoded'
+                } };
+                return $http.post(config.endpointUrl, data, conf);
+            }
 
             return {
                 getObjects: function(sparqlQry) {
@@ -146,7 +166,7 @@
                 // If the variable name contains "__", an object
                 // will be created as the value
                 // E.g. { place__id: '1' } -> { place: { id: '1' } }
-                _.set(o, key.replace('__', '.'), value.value);
+                _.set(o, key.replace(/__/g, '.'), value.value);
             });
 
             return o;

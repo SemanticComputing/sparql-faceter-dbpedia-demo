@@ -25,6 +25,6 @@
     "commit": "6cbf56991eb21756597ca675bbde804db136cbb5"
   },
   "_source": "https://github.com/urish/angular-spinner.git",
-  "_target": "~0.8.1",
+  "_target": "^0.8.1",
   "_originalSource": "angular-spinner"
 }
