@@ -145,8 +145,7 @@
 
         // FacetResultHandler is a service that queries the endpoint with
         // the query and maps the results to objects.
-        var resultHandler = new FacetResultHandler(endpointUrl, facets, facetOptions,
-                resultOptions);
+        var resultHandler = new FacetResultHandler(endpointUrl, resultOptions);
 
         // This function receives the facet selections from the controller
         // and gets the results from DBpedia.
