@@ -23,7 +23,13 @@
 
         vm.getSpinnerKey = getSpinnerKey;
 
-        init(FacetImpl);
+        // Wait until the options attribute has been set.
+        var watcher = $scope.$watch('options', function(val) {
+            if (val) {
+                init(FacetImpl);
+                watcher();
+            }
+        });
 
         function init(Facet) {
             var initListener = $scope.$on(EVENT_INITIAL_CONSTRAINTS, function(event, cons) {
@@ -105,11 +111,17 @@
         }
 
         function handleError(error) {
+            if (!vm.facet.hasError()) {
+                // The facet has recovered from the error.
+                // This happens when an update has been cancelled
+                // due to changes in facet selections.
+                return;
+            }
             vm.isLoadingFacet = false;
             if (error) {
                 vm.error = error;
             } else {
-                vm.error = 'Error occured';
+                vm.error = 'Error';
             }
         }
 

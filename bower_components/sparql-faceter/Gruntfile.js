@@ -51,7 +51,10 @@ module.exports = function(grunt) {
         },
         ngdocs: {
             all: ['src/**/*.js'],
-            sourceLink: true
+            sourceLink: true,
+            options: {
+                title: 'SPARQL Faceter'
+            }
         }
     });
 
@@ -64,7 +67,10 @@ module.exports = function(grunt) {
         'ngtemplates',
         'concat:js',
         'concat:css',
-        'clean:templates',
+        'clean:templates'
+    ]);
+
+    grunt.registerTask('doc', [
         'ngdocs:all'
     ]);
 };
