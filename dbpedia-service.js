@@ -65,20 +65,25 @@
 
         var endpointUrl = 'http://dbpedia.org/sparql';
 
-        // Restrict to writers in the (hard) science fiction genre.
-        // This is completely optional.
-        // The subject variable in the constraint should be "?id".
-        // var constraint =
-        // '?id <http://dbpedia.org/ontology/genre> <http://dbpedia.org/resource/Science_fiction> .';
+        // We are building a faceted search for writers.
+        var rdfClass = '<http://dbpedia.org/ontology/Writer>';
 
-        // Both rdfClass and constraint are optional, but you will most likely want to
-        // define at least one of them, or you might get bad results when there are no
-        // facet selections.
-        // rdfClass is just a shorthand constraint for '?id a <rdfClass> .'
+        // The facet configuration also accept a 'constraint' option.
+        // The value should be a valid SPARQL pattern.
+        // One could restrict the results further, e.g., to writers in the
+        // science fiction genre by using the 'constraint' option:
+        //
+        // var constraint = '?id <http://dbpedia.org/ontology/genre> <http://dbpedia.org/resource/Science_fiction> .';
+        //
+        // Note that the variable representing a result in the constraint should be "?id".
+        //
+        // 'rdfClass' is just a shorthand constraint for '?id a <rdfClass> .'
+        // Both rdfClass and constraint are optional, but you should define at least
+        // one of them, or you might get bad results when there are no facet selections.
         var facetOptions = {
             endpointUrl: endpointUrl, // required
-            rdfClass: '<http://dbpedia.org/ontology/Writer>', // optional
-            //constraint: constraint, // optional
+            rdfClass: rdfClass, // optional
+            // constraint: constraint, // optional, not used in this demo
             preferredLang : 'en' // required
         };
 
