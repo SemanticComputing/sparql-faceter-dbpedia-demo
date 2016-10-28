@@ -28,6 +28,12 @@
         /* Implementation */
 
         // Facet definitions
+        // 'facetId' is a "friendly" identifier for the facet,
+        //  and should be unique within the set of facets.
+        // 'predicate' is the property that defines the facet (can also be
+        //  a property path, for example).
+        // 'name' is the title of the facet to show to the user.
+        // If 'enabled' is not true, the facet will be disabled by default.
         var facets = {
             // Text search facet for names
             name: {
@@ -62,8 +68,8 @@
         // Restrict to writers in the (hard) science fiction genre.
         // This is completely optional.
         // The subject variable in the constraint should be "?id".
-        //var constraint =
-        //'?id <http://dbpedia.org/ontology/genre> <http://dbpedia.org/resource/Science_fiction> .';
+        // var constraint =
+        // '?id <http://dbpedia.org/ontology/genre> <http://dbpedia.org/resource/Science_fiction> .';
 
         // Both rdfClass and constraint are optional, but you will most likely want to
         // define at least one of them, or you might get bad results when there are no
