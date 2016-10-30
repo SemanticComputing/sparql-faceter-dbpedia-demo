@@ -27,6 +27,6 @@
     "commit": "31946ba50833d502606089e5650f31c79515ec88"
   },
   "_source": "https://github.com/SemanticComputing/angular-paging-sparql-service.git",
-  "_target": ">=0.4.0",
+  "_target": "^0.4.0",
   "_originalSource": "angular-paging-sparql-service"
 }
