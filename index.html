@@ -41,7 +41,6 @@
             <tr>
               <th>Writer</th>
               <th>Abstract / Works</th>
-              <th>Genre</th>
               <th>Birth Place</th>
               <th>Notable Work</th>
             </tr>
@@ -61,7 +60,6 @@
                 <p><span ng-repeat="work in vm.makeArray(writer.work)">
                   <a ng-href="{{ work.link }}">{{ work.label }}</span></p>
               </td>
-              <td>{{ writer.genre.join(", ") || writer.genre }}</td>
               <td>{{ writer.birthPlace }}</td>
               <td>{{ writer.notableWork.join(", ") || writer.notableWork }}</td>
             </tr>

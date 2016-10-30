@@ -137,10 +137,6 @@
         '   FILTER(langMatches(lang(?abstract), "en")) ' +
         '  }' +
         '  OPTIONAL { ' +
-        '   ?id dbo:genre/rdfs:label ?genre . ' +
-        '   FILTER(langMatches(lang(?genre), "en")) ' +
-        '  }' +
-        '  OPTIONAL { ' +
         '   ?id dbo:notableWork/rdfs:label ?notableWork . ' +
         '   FILTER(langMatches(lang(?notableWork), "en")) ' +
         '  }' +
@@ -166,7 +162,16 @@
             // you can also give getResults another parameter that is the sort
             // order of the results (as a valid SPARQL ORDER BY sequence, e.g. "?id").
             // The results are sorted by URI (?id) by default.
-            return resultHandler.getResults(facetSelections);
+            return resultHandler.getResults(facetSelections).then(function(pager) {
+                // We'll also query for the total number of results, and load the
+                // first page of results.
+                return pager.getTotalCount().then(function(count) {
+                    pager.totalCount = count;
+                    return pager.getPage(0);
+                }).then(function() {
+                    return pager;
+                });
+            });
         }
 
         // Getter for the facet definitions.
