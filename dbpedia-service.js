@@ -28,6 +28,12 @@
         /* Implementation */
 
         // Facet definitions
+        // 'facetId' is a "friendly" identifier for the facet,
+        //  and should be unique within the set of facets.
+        // 'predicate' is the property that defines the facet (can also be
+        //  a property path, for example).
+        // 'name' is the title of the facet to show to the user.
+        // If 'enabled' is not true, the facet will be disabled by default.
         var facets = {
             // Text search facet for names
             name: {
@@ -59,20 +65,25 @@
 
         var endpointUrl = 'http://dbpedia.org/sparql';
 
-        // Restrict to writers in the (hard) science fiction genre.
-        // This is completely optional.
-        // The subject variable in the constraint should be "?id".
-        //var constraint =
-        //'?id <http://dbpedia.org/ontology/genre> <http://dbpedia.org/resource/Science_fiction> .';
+        // We are building a faceted search for writers.
+        var rdfClass = '<http://dbpedia.org/ontology/Writer>';
 
-        // Both rdfClass and constraint are optional, but you will most likely want to
-        // define at least one of them, or you might get bad results when there are no
-        // facet selections.
-        // rdfClass is just a shorthand constraint for '?id a <rdfClass> .'
+        // The facet configuration also accept a 'constraint' option.
+        // The value should be a valid SPARQL pattern.
+        // One could restrict the results further, e.g., to writers in the
+        // science fiction genre by using the 'constraint' option:
+        //
+        // var constraint = '?id <http://dbpedia.org/ontology/genre> <http://dbpedia.org/resource/Science_fiction> .';
+        //
+        // Note that the variable representing a result in the constraint should be "?id".
+        //
+        // 'rdfClass' is just a shorthand constraint for '?id a <rdfClass> .'
+        // Both rdfClass and constraint are optional, but you should define at least
+        // one of them, or you might get bad results when there are no facet selections.
         var facetOptions = {
             endpointUrl: endpointUrl, // required
-            rdfClass: '<http://dbpedia.org/ontology/Writer>', // optional
-            //constraint: constraint, // optional
+            rdfClass: rdfClass, // optional
+            // constraint: constraint, // optional, not used in this demo
             preferredLang : 'en' // required
         };
 
@@ -126,10 +137,6 @@
         '   FILTER(langMatches(lang(?abstract), "en")) ' +
         '  }' +
         '  OPTIONAL { ' +
-        '   ?id dbo:genre/rdfs:label ?genre . ' +
-        '   FILTER(langMatches(lang(?genre), "en")) ' +
-        '  }' +
-        '  OPTIONAL { ' +
         '   ?id dbo:notableWork/rdfs:label ?notableWork . ' +
         '   FILTER(langMatches(lang(?notableWork), "en")) ' +
         '  }' +
@@ -155,7 +162,16 @@
             // you can also give getResults another parameter that is the sort
             // order of the results (as a valid SPARQL ORDER BY sequence, e.g. "?id").
             // The results are sorted by URI (?id) by default.
-            return resultHandler.getResults(facetSelections);
+            return resultHandler.getResults(facetSelections).then(function(pager) {
+                // We'll also query for the total number of results, and load the
+                // first page of results.
+                return pager.getTotalCount().then(function(count) {
+                    pager.totalCount = count;
+                    return pager.getPage(0);
+                }).then(function() {
+                    return pager;
+                });
+            });
         }
 
         // Getter for the facet definitions.
