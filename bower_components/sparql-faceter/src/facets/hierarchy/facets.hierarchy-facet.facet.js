@@ -9,7 +9,7 @@
     .factory('HierarchyFacet', HierarchyFacet);
 
     /* ngInject */
-    function HierarchyFacet(_, BasicFacet) {
+    function HierarchyFacet($q, _, BasicFacet, PREFIXES) {
 
         HierarchyFacetConstructor.prototype = Object.create(BasicFacet.prototype);
 
@@ -17,16 +17,13 @@
         HierarchyFacetConstructor.prototype.getConstraint = getConstraint;
         HierarchyFacetConstructor.prototype.buildQueryTemplate = buildQueryTemplate;
         HierarchyFacetConstructor.prototype.buildQuery = buildQuery;
-        HierarchyFacetConstructor.prototype.getHierarchyClasses = getHierarchyClasses;
+        HierarchyFacetConstructor.prototype.fetchState = fetchState;
 
         return HierarchyFacetConstructor;
 
         function HierarchyFacetConstructor(options) {
 
-            var queryTemplate =
-            ' PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ' +
-            ' PREFIX skos: <http://www.w3.org/2004/02/skos/core#> ' +
-            ' PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> ' +
+            var queryTemplate = PREFIXES +
             ' SELECT DISTINCT ?cnt ?facet_text ?value WHERE {' +
             ' { ' +
             '  { ' +
@@ -39,26 +36,25 @@
             '  {' +
             '   SELECT DISTINCT ?cnt ?value ?facet_text {' +
             '    {' +
-            '     SELECT DISTINCT (count(DISTINCT ?id) as ?cnt) ?value ?class {' +
-            '      VALUES ?class { ' +
-            '       <HIERARCHY_CLASSES> ' +
-            '      } ' +
-            '      ?value <PROPERTY> ?class . ' +
-            '      ?h <PROPERTY> ?value . ' +
+            '     SELECT DISTINCT (count(DISTINCT ?id) as ?cnt) ?value ?hierarchy ?lvl {' +
+            '      { SELECT DISTINCT ?h { [] <ID> ?h . <SPECIFIER> } } ' +
+            '      ?h (<HIERARCHY>)* ?value . ' +
+            '      <LEVELS> ' +
             '      ?id <ID> ?h .' +
             '      <OTHER_SELECTIONS> ' +
-            '     } GROUP BY ?class ?value ' +
+            '     } GROUP BY ?hierarchy ?value ?lvl ORDER BY ?hierarchy ' +
             '    } ' +
             '    FILTER(BOUND(?value))' +
+            '    BIND(COALESCE(?value, <http://ldf.fi/NONEXISTENT_URI>) AS ?labelValue) ' +
             '    <LABEL_PART> ' +
-            '    BIND(COALESCE(?lbl, STR(?value)) as ?label)' +
-            '    BIND(IF(?value = ?class, ?label, CONCAT("-- ", ?label)) as ?facet_text)' +
-            '    BIND(IF(?value = ?class, 0, 1) as ?order)' +
-            '   } ORDER BY ?class ?order ?facet_text' +
+            '    BIND(COALESCE(?lbl, STR(?value)) as ?label) ' +
+            '    BIND(CONCAT(?lvl, ?label) as ?facet_text)' +
+            '   } ' +
             '  } ' +
             ' } ';
 
             options.queryTemplate = options.queryTemplate || queryTemplate;
+            options.depth = angular.isUndefined(options.depth) ? 3 : options.depth;
 
             BasicFacet.call(this, options);
 
@@ -72,12 +68,7 @@
             }
 
             var triplePatternTemplate =
-            ' VALUES ?<CLASS_VAR> { ' +
-            '  <HIERARCHY_CLASSES> ' +
-            ' } ' +
-            ' ?<H_VAR> <PROPERTY> ?<CLASS_VAR> . ' +
-            ' ?<V_VAR> <PROPERTY> ?<H_VAR> . ' +
-            ' ?id <ID> ?<V_VAR> .';
+                ' ?<V_VAR> (<HIERARCHY>)* <SELECTED_VAL> . <SPECIFIER> ?id <ID> ?<V_VAR> . ';
 
             this.triplePatternTemplate = this.buildQueryTemplate(triplePatternTemplate);
         }
@@ -89,36 +80,20 @@
                     value: this.predicate
                 },
                 {
-                    placeHolder: /<PROPERTY>/g,
+                    placeHolder: /<HIERARCHY>/g,
                     value: this.config.hierarchy
                 },
                 {
                     placeHolder: /<LABEL_PART>/g,
-                    value: this.config.labelPart
+                    value: this.labelPart
                 },
                 {
                     placeHolder: /<NO_SELECTION_STRING>/g,
                     value: this.config.noSelectionString
-                },
-                {
-                    placeHolder: /<H_VAR>/g,
-                    value: 'seco_h_' + this.facetId
                 },
                 {
                     placeHolder: /<V_VAR>/g,
                     value: 'seco_v_' + this.facetId
-                },
-                {
-                    placeHolder: /<CLASS_VAR>/g,
-                    value: 'seco_class_' + this.facetId
-                },
-                {
-                    placeHolder: /<LABEL_PART>/g,
-                    value: this.config.labelPart
-                },
-                {
-                    placeHolder: /<NO_SELECTION_STRING>/g,
-                    value: this.config.noSelectionString
                 },
                 {
                     placeHolder: /\s+/g,
@@ -132,16 +107,13 @@
             return template;
         }
 
-        function getHierarchyClasses() {
-            return this.config.classes || [];
-        }
-
         function getConstraint() {
             if (!this.getSelectedValue()) {
                 return;
             }
             var res = this.triplePatternTemplate
-                .replace(/<HIERARCHY_CLASSES>/g, this.getSelectedValue());
+                .replace(/<SELECTED_VAL>/g, this.getSelectedValue())
+                .replace(/<SPECIFIER>/g, this.getSpecifier().replace(/\?value/g, '?seco_v_' + this.facetId));
 
             return res;
         }
@@ -154,16 +126,43 @@
             return val;
         }
 
+        function fetchState(constraints) {
+            var self = this;
+
+            var query = self.buildQuery(constraints.constraint);
+
+            return self.endpoint.getObjectsNoGrouping(query).then(function(results) {
+                self._error = false;
+                return results;
+            }).catch(function(error) {
+                self._isBusy = false;
+                self._error = true;
+                return $q.reject(error);
+            });
+        }
+
         // Build the facet query
         function buildQuery(constraints) {
             constraints = constraints || [];
             var query = this.queryTemplate
                 .replace(/<OTHER_SELECTIONS>/g, this.getOtherSelections(constraints))
-                .replace(/<HIERARCHY_CLASSES>/g,
-                    this.getSelectedValue() || this.getHierarchyClasses().join(' '))
-                .replace(/<PREF_LANG>/g, this.getPreferredLang());
+                .replace(/<LEVELS>/g, buildLevels(this.config.depth, this.config.hierarchy))
+                .replace(/<SPECIFIER>/g, this.getSpecifier().replace(/\?value\b/g, '?h'));
 
             return query;
+        }
+
+        function buildLevels(count, hierarchyProperty) {
+            var res = '';
+            var template = ' OPTIONAL { ?value <PROPERTY> ?u0 . <HIERARCHY> }';
+            for (var i = count; i > 0; i--) {
+                var hierarchy = _.map(_.range(i - 1), function(n) { return '?u' + n + ' <PROPERTY> ?u' + (n + 1) + ' . '; }).join('') +
+                    'BIND(CONCAT(' + _.map(_.rangeRight(i), function(n) { return 'STR(?u' + n + '),'; }).join('') + 'STR(?value)) AS ?_h) ' +
+                    'BIND("' + _.repeat('-', i) + ' " AS ?lvl)';
+                res = res += template.replace('<HIERARCHY>', hierarchy);
+            }
+            var end = ' OPTIONAL { BIND("" AS ?lvl) } BIND(COALESCE(?_h, STR(?value)) AS ?hierarchy) ';
+            return res.replace(/<PROPERTY>/g, hierarchyProperty) + end;
         }
     }
 })();

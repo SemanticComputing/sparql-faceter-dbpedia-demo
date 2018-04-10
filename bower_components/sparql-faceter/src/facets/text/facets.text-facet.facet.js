@@ -1,7 +1,3 @@
-
-/*
-* Facet for selecting a simple value.
-*/
 (function() {
     'use strict';
 
@@ -9,12 +5,15 @@
     .factory('TextFacet', TextFacet);
 
     /* ngInject */
-    function TextFacet(_) {
+    function TextFacet($q, _) {
 
         TextFacetConstructor.prototype.getConstraint = getConstraint;
+        TextFacetConstructor.prototype.getPriority = getPriority;
         TextFacetConstructor.prototype.getPreferredLang = getPreferredLang;
         TextFacetConstructor.prototype.disable = disable;
         TextFacetConstructor.prototype.enable = enable;
+        TextFacetConstructor.prototype.update = update;
+        TextFacetConstructor.prototype.isLoading = isLoading;
         TextFacetConstructor.prototype.clear = clear;
         TextFacetConstructor.prototype.isEnabled = isEnabled;
         TextFacetConstructor.prototype.getSelectedValue = getSelectedValue;
@@ -74,6 +73,10 @@
             return this.selectedValue;
         }
 
+        function getPriority() {
+            return this.config.priority;
+        }
+
         function clear() {
             this.selectedValue = undefined;
         }
@@ -89,6 +92,14 @@
         function disable() {
             this.selectedValue = undefined;
             this._isEnabled = false;
+        }
+
+        function update() {
+            return $q.when();
+        }
+
+        function isLoading() {
+            return false;
         }
     }
 })();

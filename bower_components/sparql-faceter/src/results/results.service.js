@@ -16,7 +16,7 @@
 
     /* @ngInject */
     function FacetResultHandler(_, DEFAULT_PAGES_PER_QUERY, DEFAULT_RESULTS_PER_PAGE,
-            AdvancedSparqlService, objectMapperService, QueryBuilderService) {
+            PREFIXES, AdvancedSparqlService, objectMapperService, QueryBuilderService) {
 
         return ResultHandler;
 
@@ -27,7 +27,9 @@
         * @description
         * Service for retrieving SPARQL results based on facet selections.
         *
-        * @param {string} endpointUrl The URL of the SPARQL endpoint.
+        * @param {string} endpointConfig The URL of the SPARQL endpoint,
+        *  or a configuration object as taken by {@link http://semanticcomputing.github.io/angular-paging-sparql-service/#/api/sparql.AdvancedSparqlService `AdvancedSparqlService`}.
+        *  See the {@link https://github.com/SemanticComputing/angular-paging-sparql-service angular-paging-sparql-service} package.
         * @param {Object} resultOptions Configuration object.
         *   The object has the following properties:
         *
@@ -49,7 +51,7 @@
         *      }
         *      </pre>
         *   - **[prefixes]** - `{string}` - Any prefixes used in the `queryTemplate`.
-        *     Required if the query uses any other prefixes than `rdf`, or `rdfs`.
+        *     Required if the query uses any other prefixes than `rdf`, `rdfs`, or `skos`.
         *   - **[paging]** - `{boolean}` - If truthy, results will be paged.
         *     Default is `true`.
         *   - **[resultsPerPage]** - `{number}` - The number of results per page.
@@ -63,14 +65,13 @@
         *     for more information.
         *
         */
-        function ResultHandler(endpointUrl, resultOptions) {
+        function ResultHandler(endpointConfig, resultOptions) {
             // Default options
             var options = {
                 resultsPerPage: DEFAULT_RESULTS_PER_PAGE,
                 pagesPerQuery: DEFAULT_PAGES_PER_QUERY,
                 mapper: objectMapperService,
-                prefixes: 'PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> ' +
-                          'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ',
+                prefixes: PREFIXES,
                 paging: true
             };
             options = angular.extend(options, resultOptions);
@@ -83,7 +84,7 @@
 
             var qryBuilder = new QueryBuilderService(options.prefixes);
 
-            var endpoint = new AdvancedSparqlService(endpointUrl, options.mapper);
+            var endpoint = new AdvancedSparqlService(endpointConfig, options.mapper);
 
             /**
             * @ngdoc method
@@ -107,9 +108,9 @@
 
                 if (options.paging) {
                     return endpoint.getObjects(qry.query, options.resultsPerPage, qry.resultSetQuery,
-                            options.pagesPerQuery);
+                        options.pagesPerQuery);
                 } else {
-                    return endpoint.getObjects(qry);
+                    return endpoint.getObjects(qry.query);
                 }
             }
         }

@@ -15,6 +15,7 @@
      * - {@link seco.facetedSearch.directive:secoBasicFacet `secoBasicFacet`} - A basic select box facet with text filtering
      * - {@link seco.facetedSearch.directive:secoHierarchyFacet `secoHierarchyFacet`} - A basic facet with hierarchy support.
      * - {@link seco.facetedSearch.directive:secoTextFacet `secoTextFacet`} - A free-text facet.
+     * - {@link seco.facetedSearch.directive:secoJenaTextFacet `secoJenaTextFacet`} - A free-text facet that uses Jena text search.
      * - {@link seco.facetedSearch.directive:secoTimespanFacet `secoTimespanFacet`} - Date range facet.
      *
      * Custom facets can be implemented reasonably easily.
@@ -39,6 +40,12 @@
      * - **predicate** - `{string}` - The predicate or property path that defines the facet values.
      * - **name** - `{string}` - The title of the facet. Will be displayed to end users.
      * - **enabled** `{boolean}` - Whether or not the facet is enabled by default.
+     * - **priority** `{number}` - When the {@link seco.facetedSearch.FacetHandler `FacetHandler`}
+     *   broadcasts the constraints, it sorts them based on each facet's priority value (if it
+     *   is defined), in ascending order. This can be used for better query caching, or to
+     *   optimize the order of constraints. For most facets, this value is undefined by default.
+     *   {@link seco.facetedSearch.directive:secoJenaTextFacet `secoJenaTextFacet`} has a default
+     *   priority of 10 (so it will always be the first constraint by default).
      *
      * For other options, see the facets' individual documentation.
      *
@@ -185,8 +192,15 @@
      # SPARQL Faceter - Client-Side Faceted Search Using SPARQL
      * Main module.
      */
-    angular.module('seco.facetedSearch', ['sparql', 'ui.bootstrap', 'angularSpinner'])
+    angular.module('seco.facetedSearch', [
+        'sparql', 'ui.bootstrap', 'angularSpinner', 'checklist-model'
+    ])
     .constant('_', _) // eslint-disable-line no-undef
+    .constant('PREFIXES',
+        ' PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ' +
+        ' PREFIX skos: <http://www.w3.org/2004/02/skos/core#> ' +
+        ' PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> '
+    )
     .constant('EVENT_REQUEST_CONSTRAINTS', 'sf-request-constraints')
     .constant('EVENT_INITIAL_CONSTRAINTS', 'sf-initial-constraints')
     .constant('EVENT_FACET_CHANGED', 'sf-facet-changed')
@@ -200,6 +214,7 @@
     'use strict';
 
     /* eslint-disable angular/no-service-method */
+    facetUrlStateHandlerService.$inject = ['$location', '_'];
     angular.module('seco.facetedSearch')
 
     /**
@@ -241,7 +256,7 @@
             facets = facets.facets || facets;
             var params = {};
             _(facets).forOwn(function(val, id) {
-                if (val && val.value) {
+                if (val && val.value && !(_.isObject(val.value) && _.isEmpty(val.value))) {
                     params[id] = { value: val.value, constraint: val.constraint };
                 }
             });
@@ -290,6 +305,7 @@
     * @ngdoc object
     * @name seco.facetedSearch.FacetResultHandler
     */
+    FacetResultHandler.$inject = ['_', 'DEFAULT_PAGES_PER_QUERY', 'DEFAULT_RESULTS_PER_PAGE', 'PREFIXES', 'AdvancedSparqlService', 'objectMapperService', 'QueryBuilderService'];
     angular.module('seco.facetedSearch')
     .constant('DEFAULT_PAGES_PER_QUERY', 1)
     .constant('DEFAULT_RESULTS_PER_PAGE', 10)
@@ -301,7 +317,7 @@
 
     /* @ngInject */
     function FacetResultHandler(_, DEFAULT_PAGES_PER_QUERY, DEFAULT_RESULTS_PER_PAGE,
-            AdvancedSparqlService, objectMapperService, QueryBuilderService) {
+            PREFIXES, AdvancedSparqlService, objectMapperService, QueryBuilderService) {
 
         return ResultHandler;
 
@@ -312,7 +328,9 @@
         * @description
         * Service for retrieving SPARQL results based on facet selections.
         *
-        * @param {string} endpointUrl The URL of the SPARQL endpoint.
+        * @param {string} endpointConfig The URL of the SPARQL endpoint,
+        *  or a configuration object as taken by {@link http://semanticcomputing.github.io/angular-paging-sparql-service/#/api/sparql.AdvancedSparqlService `AdvancedSparqlService`}.
+        *  See the {@link https://github.com/SemanticComputing/angular-paging-sparql-service angular-paging-sparql-service} package.
         * @param {Object} resultOptions Configuration object.
         *   The object has the following properties:
         *
@@ -334,7 +352,7 @@
         *      }
         *      </pre>
         *   - **[prefixes]** - `{string}` - Any prefixes used in the `queryTemplate`.
-        *     Required if the query uses any other prefixes than `rdf`, or `rdfs`.
+        *     Required if the query uses any other prefixes than `rdf`, `rdfs`, or `skos`.
         *   - **[paging]** - `{boolean}` - If truthy, results will be paged.
         *     Default is `true`.
         *   - **[resultsPerPage]** - `{number}` - The number of results per page.
@@ -348,14 +366,13 @@
         *     for more information.
         *
         */
-        function ResultHandler(endpointUrl, resultOptions) {
+        function ResultHandler(endpointConfig, resultOptions) {
             // Default options
             var options = {
                 resultsPerPage: DEFAULT_RESULTS_PER_PAGE,
                 pagesPerQuery: DEFAULT_PAGES_PER_QUERY,
                 mapper: objectMapperService,
-                prefixes: 'PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> ' +
-                          'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ',
+                prefixes: PREFIXES,
                 paging: true
             };
             options = angular.extend(options, resultOptions);
@@ -368,7 +385,7 @@
 
             var qryBuilder = new QueryBuilderService(options.prefixes);
 
-            var endpoint = new AdvancedSparqlService(endpointUrl, options.mapper);
+            var endpoint = new AdvancedSparqlService(endpointConfig, options.mapper);
 
             /**
             * @ngdoc method
@@ -392,11 +409,34 @@
 
                 if (options.paging) {
                     return endpoint.getObjects(qry.query, options.resultsPerPage, qry.resultSetQuery,
-                            options.pagesPerQuery);
+                        options.pagesPerQuery);
                 } else {
-                    return endpoint.getObjects(qry);
+                    return endpoint.getObjects(qry.query);
                 }
             }
+        }
+    }
+})();
+
+(function() {
+    'use strict';
+
+    facetEndpoint.$inject = ['AdvancedSparqlService', 'facetMapperService'];
+    angular.module('seco.facetedSearch')
+    .service('facetEndpoint', facetEndpoint);
+
+    /* @ngInject */
+    function facetEndpoint(AdvancedSparqlService, facetMapperService) {
+
+        this.getEndpoint = getEndpoint;
+
+        function getEndpoint(config) {
+            var endpointConfig = {
+                endpointUrl: config.endpointUrl,
+                usePost: config.usePost,
+                headers: config.headers
+            };
+            return new AdvancedSparqlService(endpointConfig, config.mapper || facetMapperService);
         }
     }
 })();
@@ -409,6 +449,7 @@
     *
     * Author Erkki Heino.
     */
+    facetMapperService.$inject = ['_', 'objectMapperService'];
     angular.module('seco.facetedSearch')
 
     .factory('facetMapperService', facetMapperService);
@@ -430,8 +471,8 @@
             var o = new this.objectClass();
 
             o.value = parseValue(obj.value);
-            o.text = obj.facet_text.value;
-            o.count = parseInt(obj.cnt.value);
+            o.text = _.get(obj, 'facet_text.value');
+            o.count = obj.cnt ? parseInt(obj.cnt.value) : undefined;
 
             return o;
         }
@@ -446,10 +487,10 @@
             if (_.includes(value.type, 'literal') && value.datatype === 'http://www.w3.org/2001/XMLSchema#integer') {
                 return value.value;
             }
-            if (_.includes(value.type, 'literal') && value.datatype === 'http://www.w3.org/2001/XMLSchema#date') {
-                return '"' + value.value + '"^^<http://www.w3.org/2001/XMLSchema#date>';
+            if (_.includes(value.type, 'literal') && value.datatype) {
+                return '"' + value.value + '"^^<' + value.datatype + '>';
             }
-            return '"' + value.value + '"';
+            return '"' + value.value + '"' + (value['xml:lang'] ? '@' + value['xml:lang'] : '');
         }
 
     }
@@ -462,6 +503,7 @@
     * @ngdoc object
     * @name seco.facetedSearch.FacetHandler
     */
+    FacetHandler.$inject = ['_', 'EVENT_FACET_CONSTRAINTS', 'EVENT_FACET_CHANGED', 'EVENT_REQUEST_CONSTRAINTS', 'EVENT_INITIAL_CONSTRAINTS'];
     angular.module('seco.facetedSearch')
     .factory('FacetHandler', FacetHandler);
 
@@ -511,14 +553,15 @@
         *   - **[endpointUrl]** - `{string}` - The SPARQL endpoint URL. Optional,
         *   as it is just sent to all listening facets at init, and can also
         *   be given to facets individually.
+        * - **[headers]** `{Object}` - Additional HTTP headers.
         *   - **[constraint]** - `{string}` - A SPARQL triple pattern that selects
         *   all the resources that are being faceted.
         *   - **[rdfClass]** - `{string}` - The `rdf:type` of the resources being
         *   faceted. A shorthand for `constraint: '?id a <class> .'`.
-        *   - **[preferredLang]** - `{string}` - The language tag that is preferred
+        *   - **[preferredLang]** - `{string|Array}` - The language tag that is preferred
         *   when getting labels for facet values, in case the value is a resource.
+        *   If the value is an Array, the specified languages are tried in order.
         *   The default is 'en'.
-        *   Currently only one language can be given.
         *   This argument can also be given directly to the individual facets.
         *   - **[initialState]** - `{Object}` - The initial state of the facets.
         *   Used when loading the state from URL parameters, for example.
@@ -555,8 +598,10 @@
             // Update state, and broadcast it to listening facets.
             function update(event, constraint) {
                 event.stopPropagation();
-                self.state.facets[constraint.id] = constraint;
-                broadCastConstraints(EVENT_FACET_CONSTRAINTS);
+                if (!_.isEqual(self.state.facets[constraint.id], constraint)) {
+                    self.state.facets[constraint.id] = constraint;
+                    broadCastConstraints(EVENT_FACET_CONSTRAINTS);
+                }
             }
 
             function broadCastInitial(event) {
@@ -582,7 +627,7 @@
             }
 
             function getConstraint() {
-                return _(self.state.facets).values().map('constraint').compact().value();
+                return _(self.state.facets).values().sortBy('priority').map('constraint').compact().value();
             }
 
             // Combine the possible RDF class and constraint definitions in the config.
@@ -612,8 +657,31 @@
 (function() {
     'use strict';
 
+    /**
+    * @ngdoc directive
+    * @name seco.facetedSearch.directive:secoFacetWrapper
+    * @restrict 'E'
+    * @element ANY
+    * @description
+    * Wraps facets in a shared template.
+    */
     angular.module('seco.facetedSearch')
-    .filter('textWithSelection', function(_) {
+    .directive('secoFacetWrapper', facetWrapper);
+
+    function facetWrapper() {
+        return {
+            restrict: 'E',
+            transclude: true,
+            templateUrl: 'src/facets/facets.facet-wrapper.directive.html'
+        };
+    }
+})();
+
+(function() {
+    'use strict';
+
+    angular.module('seco.facetedSearch')
+    .filter('textWithSelection', ['_', function(_) {
         return function(values, text, selection) {
             if (!text) {
                 return values;
@@ -635,17 +703,18 @@
                     _.includes(selectedValues, val.value);
             });
         };
-    });
+    }]);
 })();
 
 (function() {
     'use strict';
 
+    AbstractFacetController.$inject = ['$scope', '$log', '_', 'EVENT_FACET_CONSTRAINTS', 'EVENT_FACET_CHANGED', 'EVENT_REQUEST_CONSTRAINTS', 'EVENT_INITIAL_CONSTRAINTS', 'FacetImpl'];
     angular.module('seco.facetedSearch')
     .controller('AbstractFacetController', AbstractFacetController);
 
     /* @ngInject */
-    function AbstractFacetController($scope, _, EVENT_FACET_CONSTRAINTS,
+    function AbstractFacetController($scope, $log, _, EVENT_FACET_CONSTRAINTS,
             EVENT_FACET_CHANGED, EVENT_REQUEST_CONSTRAINTS, EVENT_INITIAL_CONSTRAINTS,
             FacetImpl) {
 
@@ -654,33 +723,40 @@
         vm.isLoading = isLoading;
         vm.changed = changed;
 
+        vm.toggleFacetEnabled = toggleFacetEnabled;
         vm.disableFacet = disableFacet;
         vm.enableFacet = enableFacet;
 
         vm.getFacetSize = getFacetSize;
 
+        vm.init = init;
         vm.listener = function() { };
+        vm.listen = listen;
+        vm.update = update;
+        vm.emitChange = emitChange;
+        vm.handleUpdateSuccess = handleUpdateSuccess;
+        vm.handleError = handleError;
 
         vm.getSpinnerKey = getSpinnerKey;
 
         // Wait until the options attribute has been set.
         var watcher = $scope.$watch('options', function(val) {
             if (val) {
-                init(FacetImpl);
+                vm.init();
                 watcher();
             }
         });
 
-        function init(Facet) {
+        function init(facet) {
             var initListener = $scope.$on(EVENT_INITIAL_CONSTRAINTS, function(event, cons) {
                 var opts = _.cloneDeep($scope.options);
                 opts = angular.extend({}, cons.config, opts);
                 opts.initial = cons.facets;
-                vm.facet = new Facet(opts);
+                vm.facet = facet || new FacetImpl(opts);
                 if (vm.facet.isEnabled()) {
-                    vm.previousVal = vm.facet.getSelectedValue();
-                    listen();
-                    update(cons);
+                    vm.previousVal = _.cloneDeep(vm.facet.getSelectedValue());
+                    vm.listen();
+                    vm.update(cons);
                 }
                 // Unregister initListener
                 initListener();
@@ -698,13 +774,13 @@
 
         function listen() {
             vm.listener = $scope.$on(EVENT_FACET_CONSTRAINTS, function(event, cons) {
-                update(cons);
+                vm.update(cons);
             });
         }
 
         function update(constraints) {
             vm.isLoadingFacet = true;
-            return vm.facet.update(constraints).then(handleUpdateSuccess, handleError);
+            return vm.facet.update(constraints).then(vm.handleUpdateSuccess, handleError);
         }
 
         function isLoading() {
@@ -717,32 +793,39 @@
                 vm.isLoadingFacet = false;
                 return;
             }
-            vm.previousVal = _.clone(val);
+            vm.previousVal = _.cloneDeep(val);
             var args = {
                 id: vm.facet.facetId,
                 constraint: vm.facet.getConstraint(),
-                value: val
+                value: val,
+                priority: vm.facet.getPriority()
             };
             $scope.$emit(EVENT_FACET_CHANGED, args);
         }
 
         function changed() {
             vm.isLoadingFacet = true;
-            emitChange();
+            vm.emitChange();
+        }
+
+        function toggleFacetEnabled() {
+            vm.facet.isEnabled() ? vm.disableFacet() : vm.enableFacet();
         }
 
         function enableFacet() {
-            listen();
+            vm.listen();
             vm.isLoadingFacet = true;
             vm.facet.enable();
-            emitChange(true);
+            vm.init(vm.facet);
         }
 
         function disableFacet() {
-            vm.listener();
+            if (vm.listener) {
+                vm.listener();
+            }
             vm.facet.disable();
             var forced = vm.facet.getSelectedValue() ? true : false;
-            emitChange(forced);
+            vm.emitChange(forced);
         }
 
         function handleUpdateSuccess() {
@@ -752,17 +835,15 @@
 
         function handleError(error) {
             if (!vm.facet.hasError()) {
+                $log.info(error);
                 // The facet has recovered from the error.
                 // This happens when an update has been cancelled
                 // due to changes in facet selections.
                 return;
             }
+            $log.error(error.statusText || error);
             vm.isLoadingFacet = false;
-            if (error) {
-                vm.error = error;
-            } else {
-                vm.error = 'Error';
-            }
+            vm.error = 'Error' + (error.status ? ' (' + error.status + ')' : '');
         }
 
         function getFacetSize(facetStates) {
@@ -781,23 +862,27 @@
 (function() {
     'use strict';
 
+    BasicFacet.$inject = ['$q', '_', 'facetEndpoint', 'NO_SELECTION_STRING', 'PREFIXES'];
     angular.module('seco.facetedSearch')
     .factory('BasicFacet', BasicFacet);
 
     /* ngInject */
-    function BasicFacet($q, _, SparqlService, facetMapperService, NO_SELECTION_STRING) {
+    function BasicFacet($q, _, facetEndpoint, NO_SELECTION_STRING, PREFIXES) {
 
         BasicFacetConstructor.prototype.update = update;
         BasicFacetConstructor.prototype.getState = getState;
         BasicFacetConstructor.prototype.fetchState = fetchState;
+        BasicFacetConstructor.prototype.fetchFacetTextFromServices = fetchFacetTextFromServices;
+        BasicFacetConstructor.prototype.finalizeFacetValues = finalizeFacetValues;
         BasicFacetConstructor.prototype.getConstraint = getConstraint;
         BasicFacetConstructor.prototype.getTriplePattern = getTriplePattern;
         BasicFacetConstructor.prototype.getSpecifier = getSpecifier;
-        BasicFacetConstructor.prototype.getPreferredLang = getPreferredLang;
+        BasicFacetConstructor.prototype.getPriority = getPriority;
         BasicFacetConstructor.prototype.buildQueryTemplate = buildQueryTemplate;
         BasicFacetConstructor.prototype.buildQuery = buildQuery;
-        BasicFacetConstructor.prototype.buildServiceUnions = buildServiceUnions;
         BasicFacetConstructor.prototype.buildSelections = buildSelections;
+        BasicFacetConstructor.prototype.buildLabelPart = buildLabelPart;
+        BasicFacetConstructor.prototype.removeOwnConstraint = removeOwnConstraint;
         BasicFacetConstructor.prototype.getOtherSelections = getOtherSelections;
         BasicFacetConstructor.prototype.getDeselectUnionTemplate = getDeselectUnionTemplate;
         BasicFacetConstructor.prototype.disable = disable;
@@ -818,39 +903,25 @@
 
             var labelPart =
             ' OPTIONAL {' +
-            '  ?value skos:prefLabel ?lbl . ' +
+            '  ?labelValue skos:prefLabel ?lbl . ' +
             '  FILTER(langMatches(lang(?lbl), "<PREF_LANG>")) .' +
             ' }' +
             ' OPTIONAL {' +
-            '  ?value rdfs:label ?lbl . ' +
+            '  ?labelValue rdfs:label ?lbl . ' +
             '  FILTER(langMatches(lang(?lbl), "<PREF_LANG>")) .' +
-            ' }' +
-            ' OPTIONAL {' +
-            '  ?value skos:prefLabel ?lbl . ' +
-            '  FILTER(langMatches(lang(?lbl), "")) .' +
-            ' }' +
-            ' OPTIONAL {' +
-            '  ?value rdfs:label ?lbl . ' +
-            '  FILTER(langMatches(lang(?lbl), "")) .' +
-            ' } ';
+            ' }';
 
-            var serviceLabelPart =
-            ' { ' +
+            var serviceQueryTemplate = PREFIXES +
+            ' SELECT DISTINCT ?facet_text ?value {' +
+            '  VALUES ?value { <VALUES> } ' +
             '  ?value skos:prefLabel|rdfs:label [] . ' +
-               labelPart +
-            '  FILTER(BOUND(?lbl)) ' +
-            ' }' +
-            ' UNION { ' +
-            '  FILTER(!ISURI(?value)) ' +
-            '  BIND(STR(?value) AS ?lbl) ' +
-            '  FILTER(BOUND(?lbl)) ' +
-            ' } ';
+            '  BIND(?value AS ?labelValue) ' +
+            '  <LABEL_PART>' +
+            '  BIND(?lbl AS ?facet_text)' +
+            '  FILTER(?facet_text != "")' +
+            ' }';
 
-            var queryTemplate =
-            ' PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ' +
-            ' PREFIX skos: <http://www.w3.org/2004/02/skos/core#> ' +
-            ' PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> ' +
-
+            var queryTemplate = PREFIXES +
             ' SELECT DISTINCT ?cnt ?facet_text ?value WHERE {' +
             ' { ' +
             '  { ' +
@@ -867,25 +938,22 @@
             '      <SELECTIONS> ' +
             '     } GROUP BY ?value ' +
             '    } ' +
-            '    FILTER(BOUND(?value)) ' +
+            '    FILTER(BOUND(?value))' +
+            '    BIND(COALESCE(?value, <http://ldf.fi/NONEXISTENT_URI>) AS ?labelValue) ' +
             '    <LABEL_PART> ' +
-            '    <OTHER_SERVICES> ' +
-            '    BIND(COALESCE(?lbl, IF(ISURI(?value), REPLACE(STR(?value),' +
-            '     "^.+/(.+?)$", "$1"), STR(?value))) AS ?facet_text)' +
-            '   } ORDER BY ?facet_text ' +
+            '    BIND(COALESCE(?lbl, IF(!ISURI(?value), ?value, "")) AS ?facet_text)' +
+            '   } ' +
             '  }' +
             ' } ';
 
             var defaultConfig = {
                 preferredLang: 'fi',
                 queryTemplate: queryTemplate,
+                serviceQueryTemplate: serviceQueryTemplate,
                 labelPart: labelPart,
-                noSelectionString: NO_SELECTION_STRING
+                noSelectionString: NO_SELECTION_STRING,
+                usePost: true
             };
-
-            if (options.services) {
-                defaultConfig.labelPart = serviceLabelPart;
-            }
 
             this.config = angular.extend({}, defaultConfig, options);
 
@@ -899,7 +967,7 @@
                 this.disable();
             }
 
-            this.endpoint = new SparqlService(this.config.endpointUrl);
+            this.endpoint = facetEndpoint.getEndpoint(this.config);
 
             // Initial value
             var constVal = _.get(options, 'initial.' + this.facetId);
@@ -909,7 +977,9 @@
                 this.selectedValue = { value: constVal.value };
             }
 
+            this.labelPart = this.buildLabelPart();
             this.queryTemplate = this.buildQueryTemplate(this.config.queryTemplate);
+            this.serviceQueryTemplate = this.buildQueryTemplate(this.config.serviceQueryTemplate);
         }
 
         function update(constraints) {
@@ -917,16 +987,17 @@
             if (!self.isEnabled()) {
                 return $q.when();
             }
-            if (!self._error && self.previousConstraints && _.isEqual(constraints.constraint,
-                    self.previousConstraints)) {
-                return $q.when();
+
+            var otherCons = this.getOtherSelections(constraints.constraint);
+            if (self.otherCons === otherCons) {
+                return $q.when(self.state);
             }
-            self.previousConstraints = _.clone(constraints.constraint);
+            self.otherCons = otherCons;
 
             self._isBusy = true;
 
             return self.fetchState(constraints).then(function(state) {
-                if (!_.isEqual(self.previousConstraints, constraints.constraint)) {
+                if (!_.isEqual(otherCons, self.otherCons)) {
                     return $q.reject('Facet state changed');
                 }
                 self.state = state;
@@ -946,13 +1017,53 @@
 
             var query = self.buildQuery(constraints.constraint);
 
-            return self.endpoint.getObjects(query).then(function(results) {
+            return self.endpoint.getObjectsNoGrouping(query).then(function(results) {
+                if (self.config.services) {
+                    return self.fetchFacetTextFromServices(results);
+                }
                 self._error = false;
-                return facetMapperService.makeObjectListNoGrouping(results);
+                return results;
+            }).then(function(res) {
+                res = self.finalizeFacetValues(res);
+                self._error = false;
+                return res;
             }).catch(function(error) {
                 self._isBusy = false;
                 self._error = true;
                 return $q.reject(error);
+            });
+        }
+
+        function finalizeFacetValues(results) {
+            results.forEach(function(r) {
+                if (!r.text) {
+                    r.text = r.value.replace(/^.+\/(.+?)>$/, '$1');
+                }
+            });
+            return [_.head(results)].concat(_.sortBy(_.tail(results), 'text'));
+        }
+
+        function fetchFacetTextFromServices(results) {
+            var self = this;
+            var emptyLabels = _.filter(results, function(r) { return !r.text; });
+            var values = _.map(emptyLabels, function(r) { return r.value; });
+            var promises = _.map(self.config.services, function(s) {
+                var endpointConfig = {
+                    endpointUrl: s.replace(/[<>]/g, ''),
+                    usePost: self.config.usePost,
+                    headers: self.config.headers
+                };
+                var endpoint = facetEndpoint.getEndpoint(endpointConfig);
+                var qry = self.serviceQueryTemplate
+                    .replace(/<VALUES>/g, values.join(' '));
+                return endpoint.getObjectsNoGrouping(qry);
+            });
+            return $q.all(promises).then(function(res) {
+                var all = _.flatten(res);
+                all.forEach(function(objWithText) {
+                    _.find(results, ['value', objWithText.value]).text = objWithText.text;
+                });
+                return results;
             });
         }
 
@@ -968,6 +1079,10 @@
             return this.specifier ? this.specifier : '';
         }
 
+        function getPriority() {
+            return this.config.priority;
+        }
+
         function getConstraint() {
             if (!this.getSelectedValue()) {
                 return;
@@ -981,18 +1096,13 @@
             return this.deselectUnionTemplate;
         }
 
-        function getPreferredLang() {
-            return this.config.preferredLang;
-        }
-
         // Build the facet query
         function buildQuery(constraints) {
             constraints = constraints || [];
+            var otherConstraints = this.removeOwnConstraint(constraints);
             var query = this.queryTemplate
-                .replace(/<OTHER_SERVICES>/g, this.buildServiceUnions())
-                .replace(/<OTHER_SELECTIONS>/g, this.getOtherSelections(constraints))
-                .replace(/<SELECTIONS>/g, this.buildSelections(constraints))
-                .replace(/<PREF_LANG>/g, this.getPreferredLang());
+                .replace(/<OTHER_SELECTIONS>/g, otherConstraints.join(' '))
+                .replace(/<SELECTIONS>/g, this.buildSelections(otherConstraints));
 
             return query;
         }
@@ -1004,24 +1114,23 @@
             return constraints;
         }
 
-        function getOtherSelections(constraints) {
+        function removeOwnConstraint(constraints) {
             var ownConstraint = this.getConstraint();
-            var deselections = _.reject(constraints, function(v) { return v === ownConstraint; });
-            return deselections.join(' ');
+            return _.reject(constraints, function(v) { return v === ownConstraint; });
         }
 
-        function buildServiceUnions() {
+        function getOtherSelections(constraints) {
+            return this.removeOwnConstraint(constraints).join(' ');
+        }
+
+        function buildLabelPart() {
             var self = this;
-            var unions = '';
-            _.forEach(self.config.services, function(service) {
-                unions = unions +
-                ' UNION { ' +
-                '  SERVICE ' + service + ' { ' +
-                    self.config.labelPart +
-                '  } ' +
-                ' } ';
+            var res = '';
+            var langs = _.castArray(self.config.preferredLang).concat(['']);
+            langs.forEach(function(lang) {
+                res += self.config.labelPart.replace(/<PREF_LANG>/g, lang);
             });
-            return unions;
+            return res;
         }
 
         // Replace placeholders in the query template using the configuration.
@@ -1029,7 +1138,7 @@
             var templateSubs = [
                 {
                     placeHolder: /<LABEL_PART>/g,
-                    value: this.config.labelPart
+                    value: this.labelPart
                 },
                 {
                     placeHolder: /<NO_SELECTION_STRING>/g,
@@ -1077,6 +1186,7 @@
 (function() {
     'use strict';
 
+    BasicFacetController.$inject = ['$scope', '$controller', 'BasicFacet'];
     angular.module('seco.facetedSearch')
     .controller('BasicFacetController', BasicFacetController);
 
@@ -1120,14 +1230,23 @@
     * - **[endpointUrl]** `{string}` - The URL of the SPARQL endpoint.
     *   Optional, as it can also be given globally in
     *   {@link seco.facetedSearch.FacetHandler `FacetHandler`} config.
-    * - **[preferredLang]** - `{string}` - The language tag that is preferred
+    * - **[headers]** `{Object}` - Additional HTTP headers.
+    *   Note that currently it is not possible to specify separate headers for separate
+    *   services.
+    * - **[services]** `{Array}` - In case labels for the facet values are (partially)
+    *   found in another SPARQL endpoint, those endpoints can be given as a list of URIs.
+    *   A separate query is made to each additional service to retrieve the labels.
+    * - **[preferredLang]** - `{string|Array}` - The language tag that is preferred
     *   when getting labels for facet values, in case the value is a resource.
     *   The default is 'en'.
-    *   Currently only one language can be given.
-    *   If a label is not found in the given language, a label without a
+    *   Can also be a list of languages, in which case the languages are tried
+    *   in order.
+    *   If a label is not found in the given languages, a label without a
     *   language tag is used. If a label is still not found,
     *   the end part of the resource URI is used.
     *   Supported label properties are `skos:prefLabel`, and `rdfs:label`.
+    * - **[priority]** - `{number}` - Priority for constraint sorting.
+    *   Undefined by default.
     */
     angular.module('seco.facetedSearch')
     .directive('secoBasicFacet', basicFacet);
@@ -1145,23 +1264,23 @@
     }
 })();
 
-
-/*
-* Facet for selecting a simple value.
-*/
 (function() {
     'use strict';
 
+    TextFacet.$inject = ['$q', '_'];
     angular.module('seco.facetedSearch')
     .factory('TextFacet', TextFacet);
 
     /* ngInject */
-    function TextFacet(_) {
+    function TextFacet($q, _) {
 
         TextFacetConstructor.prototype.getConstraint = getConstraint;
+        TextFacetConstructor.prototype.getPriority = getPriority;
         TextFacetConstructor.prototype.getPreferredLang = getPreferredLang;
         TextFacetConstructor.prototype.disable = disable;
         TextFacetConstructor.prototype.enable = enable;
+        TextFacetConstructor.prototype.update = update;
+        TextFacetConstructor.prototype.isLoading = isLoading;
         TextFacetConstructor.prototype.clear = clear;
         TextFacetConstructor.prototype.isEnabled = isEnabled;
         TextFacetConstructor.prototype.getSelectedValue = getSelectedValue;
@@ -1221,6 +1340,10 @@
             return this.selectedValue;
         }
 
+        function getPriority() {
+            return this.config.priority;
+        }
+
         function clear() {
             this.selectedValue = undefined;
         }
@@ -1237,80 +1360,51 @@
             this.selectedValue = undefined;
             this._isEnabled = false;
         }
+
+        function update() {
+            return $q.when();
+        }
+
+        function isLoading() {
+            return false;
+        }
     }
 })();
 
 (function() {
     'use strict';
 
+    TextFacetController.$inject = ['$scope', '$controller', 'TextFacet'];
     angular.module('seco.facetedSearch')
     .controller('TextFacetController', TextFacetController);
 
     /* ngInject */
-    function TextFacetController($scope, _, EVENT_FACET_CHANGED,
-            EVENT_REQUEST_CONSTRAINTS, EVENT_INITIAL_CONSTRAINTS, TextFacet) {
-        var vm = this;
+    function TextFacetController($scope, $controller, TextFacet) {
+        var args = { $scope: $scope, FacetImpl: TextFacet };
+        var vm = $controller('AbstractFacetController', args);
+
+        vm.listen = function() { };
+        vm.listener = function() { };
 
         vm.changed = changed;
         vm.clear = clear;
         vm.enableFacet = enableFacet;
-        vm.disableFacet = disableFacet;
-        vm.isFacetEnabled = isFacetEnabled;
+        vm.isLoadingFacet = false;
 
-        // Wait until the options attribute has been set.
-        var watcher = $scope.$watch('options', function(val) {
-            if (val) {
-                init();
-                watcher();
-            }
-        });
-
-        function init() {
-            var initListener = $scope.$on(EVENT_INITIAL_CONSTRAINTS, function(event, cons) {
-                var opts = _.cloneDeep($scope.options);
-                opts.initial = cons.facets;
-                vm.facet = new TextFacet(opts);
-                // Unregister initListener
-                initListener();
-            });
-            $scope.$emit(EVENT_REQUEST_CONSTRAINTS);
-        }
-
-        function emitChange() {
-            var val = vm.facet.getSelectedValue();
-            var args = {
-                id: vm.facet.facetId,
-                constraint: vm.facet.getConstraint(),
-                value: val
-            };
-            $scope.$emit(EVENT_FACET_CHANGED, args);
-        }
+        return vm;
 
         function changed() {
-            emitChange();
+            vm.emitChange();
         }
 
         function clear() {
             vm.facet.clear();
-            emitChange();
+            vm.emitChange();
         }
 
         function enableFacet() {
             vm.facet.enable();
         }
-
-        function disableFacet() {
-            vm.facet.disable();
-            emitChange();
-        }
-
-        function isFacetEnabled() {
-            if (!vm.facet) {
-                return false;
-            }
-            return vm.facet.isEnabled();
-        }
-
     }
 })();
 
@@ -1335,7 +1429,8 @@
     * - **name** - `{string}` - The title of the facet. Will be displayed to end users.
     * - **[enabled]** `{boolean}` - Whether or not the facet is enabled by default.
     *   If undefined, the facet will be disabled by default.
-    *
+    * - **[priority]** - `{number}` - Priority for constraint sorting.
+    *   Undefined by default.
     */
     angular.module('seco.facetedSearch')
     .directive('secoTextFacet', textFacet);
@@ -1353,35 +1448,272 @@
     }
 })();
 
+(function() {
+    'use strict';
+
+    JenaTextFacet.$inject = ['_', 'TextFacet', 'textQueryPredicate'];
+    angular.module('seco.facetedSearch')
+    .value('textQueryPredicate', '<http://jena.apache.org/text#query>')
+    .factory('JenaTextFacet', JenaTextFacet);
+
+    /* ngInject */
+    function JenaTextFacet(_, TextFacet, textQueryPredicate) {
+
+        JenaTextFacet.prototype = Object.create(TextFacet.prototype);
+        JenaTextFacet.prototype.getConstraint = getConstraint;
+        JenaTextFacet.prototype.sanitize = sanitize;
+
+        return JenaTextFacet;
+
+        function JenaTextFacet(options) {
+            TextFacet.call(this, options);
+            this.config.priority = this.config.priority || 0;
+        }
+
+        function getConstraint() {
+            var value = this.getSelectedValue();
+            if (!value) {
+                return undefined;
+            }
+
+            value = this.sanitize(value);
+
+            var args = [];
+            if (this.config.predicate) {
+                args.push(this.config.predicate);
+            }
+
+            args.push('"' + value + '"');
+
+            if (this.config.limit) {
+                args.push(this.config.limit);
+            }
+
+            var obj = '(' + args.join(' ') + ')';
+
+            var result = '(?id ?score) ' + textQueryPredicate + ' ' + obj + ' .';
+
+            if (this.config.graph) {
+                result = 'GRAPH ' + this.config.graph + ' { ' + result + ' }';
+            }
+
+            return result || undefined;
+        }
+
+        function sanitize(query) {
+            query = query
+                .replace(/[\\()]/g, '') // backslashes, and parentheses
+                .replace(/~{2,}/g, '~') // double ~
+                .replace(/^~/g, '') // ~ as first token
+                .replace(/(\b~*(AND|OR|NOT)\s*~*)+$/g, '') // AND, OR, NOT last
+                .replace(/^((AND|OR|NOT)\b\s*~*)+/g, ''); // AND, OR, NOT first
+
+            var quoteRepl;
+            if ((query.match(/"/g) || []).length % 2) {
+                // Unbalanced quotes, remove them
+                quoteRepl = '';
+            } else {
+                // Balanced quotes, escape them
+                quoteRepl = '\\"';
+            }
+            query = query.replace(/"/g, quoteRepl).trim();
+
+            return query;
+        }
+    }
+})();
+
+(function() {
+    'use strict';
+
+    JenaTextFacetController.$inject = ['$controller', '$scope', 'JenaTextFacet'];
+    angular.module('seco.facetedSearch')
+    .controller('JenaTextFacetController', JenaTextFacetController);
+
+    /* ngInject */
+    function JenaTextFacetController($controller, $scope, JenaTextFacet) {
+        var args = { $scope: $scope, TextFacet: JenaTextFacet };
+        return $controller('TextFacetController', args);
+    }
+})();
+
+(function() {
+    'use strict';
+
+    /**
+    * @ngdoc directive
+    * @name seco.facetedSearch.directive:secoJenaTextFacet
+    * @restrict 'E'
+    * @element ANY
+    * @description
+    * A free-text search facet using Jena text search.
+    *
+    * This facet can only be used if the SPARQL endpoint supports
+    * [Jena text query](https://jena.apache.org/documentation/query/text-query.html).
+    *
+    * The facet does not make any SPARQL queries, just generates SPARQL triple patterns
+    * out of the typed text for other facets to use.
+    *
+    * The produced constraint looks like the following (where `predicate`, and `limit`
+    * are based on the configuration options, and left out if undefined):
+    * <pre>
+    * (?id ?score) <http://jena.apache.org/text#query> (predicate "search terms" limit) .
+    * </pre>
+    *
+    * If the `graph` option is defined, the constraint is wrapped accordingly:
+    * <pre>
+    * GRAPH graph {
+    *   (?id ?score) <http://jena.apache.org/text#query> (predicate "search terms" limit) .
+    * }
+    * </pre>
+    *
+    * The score is captured as variable `?score`, and can thus be used to sort results.
+    *
+    * The search terms are sanitized in order to avoid syntax errors from the backend.
+    * In case there is an even number of quotes (`"`) they are escaped in the search terms.
+    * If there is an odd number of quotes, they are removed.
+    * Backslashes, and parentheses are removed, as well as `AND`, `OR`, and `NOT`,
+    * if they are the first or last tokens in the query.
+    * "`~`" is removed if it's the first character in the query.
+    * Consecutive "`~`" are removed. I.e. "`~~`" is changed to "`~`".
+    * Otherwise the search terms are not modified, so e.g. `AND`, `OR`, `*`, and `~`
+    * can be used in the query.
+    *
+    * The sanitization is not reflected to the user, so if a search triggers while
+    * they are writing, and the last word they wrote is, e.g., "`AND`",
+    * the user will see all that they wrote, but the produced SPARQL constraint
+    * will not include the `AND`. The user can continue writing, and the next time
+    * the search triggers, if the query is valid, the constraint will include it.
+    *
+    * @param {Object} options The configuration object with the following structure:
+    * - **facetId** - `{string}` - A friendly id for the facet.
+    *   Should be unique in the set of facets, and should be usable as a SPARQL variable.
+    * - **name** - `{string}` - The title of the facet. Will be displayed to end users.
+    * - **[enabled]** `{boolean}` - Whether or not the facet is enabled by default.
+    *   If undefined, the facet will be disabled by default.
+    * - **[priority]** - `{number}` - Priority for constraint sorting. Default is 0.
+    * - **[predicate]** - `{string}` - The property to use in the search.
+    *   See [Jena text query documentation](https://jena.apache.org/documentation/query/text-query.html#query-with-sparql).
+    * - **[limit]** - `{number}` - Limit for the text search results.
+    *   See [Jena text query documentation](https://jena.apache.org/documentation/query/text-query.html#query-with-sparql).
+    * - **[graph]** - `{string}` - The URI of the graph to use for the text search.
+    *
+    */
+    angular.module('seco.facetedSearch')
+    .directive('secoJenaTextFacet', jenaTextFacet);
+
+    function jenaTextFacet() {
+        return {
+            restrict: 'E',
+            scope: {
+                options: '='
+            },
+            controller: 'JenaTextFacetController',
+            controllerAs: 'vm',
+            templateUrl: 'src/facets/text/facets.text-facet.directive.html'
+        };
+    }
+})();
+
+(function() {
+    'use strict';
+
+    timespanMapperService.$inject = ['_', 'objectMapperService'];
+    angular.module('seco.facetedSearch')
+
+    .factory('timespanMapperService', timespanMapperService);
+
+    /* ngInject */
+    function timespanMapperService(_, objectMapperService) {
+        TimespanMapper.prototype.makeObject = makeObject;
+        TimespanMapper.prototype.parseValue = parseValue;
+
+        var proto = Object.getPrototypeOf(objectMapperService);
+        TimespanMapper.prototype = angular.extend({}, proto, TimespanMapper.prototype);
+
+        return new TimespanMapper();
+
+        function TimespanMapper() {
+            this.objectClass = Object;
+        }
+
+        function makeObject(obj) {
+            var o = new this.objectClass();
+
+            o.min = parseValue(_.get(obj, 'min.value'));
+            o.max = parseValue(_.get(obj, 'max.value'));
+
+            return o;
+        }
+
+        function parseValue(value) {
+            if (!value) {
+                return undefined;
+            }
+            var d = _(value.substring(0, 10).split('-')).map(function(d) { return parseInt(d, 10); }).value();
+            return new Date(d[0], d[1]-1, d[2]);
+        }
+    }
+})();
+
 
 /*
-* Facet for selecting a simple value.
+* Facet for selecting a date range
 */
 (function() {
     'use strict';
 
+    TimespanFacet.$inject = ['$q', '_', 'facetEndpoint', 'timespanMapperService', 'BasicFacet', 'PREFIXES'];
     angular.module('seco.facetedSearch')
     .factory('TimespanFacet', TimespanFacet);
 
     /* ngInject */
-    function TimespanFacet(_) {
+    function TimespanFacet($q, _, facetEndpoint, timespanMapperService, BasicFacet,
+            PREFIXES) {
+        TimespanFacetConstructor.prototype = Object.create(BasicFacet.prototype);
 
+        TimespanFacetConstructor.prototype.getSelectedValue = getSelectedValue;
         TimespanFacetConstructor.prototype.getConstraint = getConstraint;
-        TimespanFacetConstructor.prototype.getPreferredLang = getPreferredLang;
+        TimespanFacetConstructor.prototype.buildQueryTemplate = buildQueryTemplate;
+        TimespanFacetConstructor.prototype.buildQuery = buildQuery;
+        TimespanFacetConstructor.prototype.fetchState = fetchState;
+        TimespanFacetConstructor.prototype.update = update;
         TimespanFacetConstructor.prototype.disable = disable;
         TimespanFacetConstructor.prototype.enable = enable;
-        TimespanFacetConstructor.prototype.isEnabled = isEnabled;
-        TimespanFacetConstructor.prototype.getSelectedValue = getSelectedValue;
+        TimespanFacetConstructor.prototype.getOtherSelections = getOtherSelections;
+        TimespanFacetConstructor.prototype.initState = initState;
+        TimespanFacetConstructor.prototype.getMinDate = getMinDate;
+        TimespanFacetConstructor.prototype.getMaxDate = getMaxDate;
+        TimespanFacetConstructor.prototype.getSelectedStartDate = getSelectedStartDate;
+        TimespanFacetConstructor.prototype.getSelectedEndDate = getSelectedEndDate;
+        TimespanFacetConstructor.prototype.updateState = updateState;
 
         return TimespanFacetConstructor;
 
         function TimespanFacetConstructor(options) {
+            var simpleTemplate = PREFIXES +
+            ' SELECT (min(xsd:date(?value)) AS ?min) (max(xsd:date(?value)) AS ?max) { ' +
+            '   <SELECTIONS> ' +
+            '   ?id <START_PROPERTY> ?value . ' +
+            ' } ';
 
-            /* Implementation */
+            var separateTemplate = PREFIXES +
+            ' SELECT ?min ?max { ' +
+            '   { ' +
+            '     SELECT (min(xsd:date(?start)) AS ?min) { ' +
+            '       <SELECTIONS> ' +
+            '       ?id <START_PROPERTY> ?start . ' +
+            '     } ' +
+            '   } ' +
+            '   { ' +
+            '     SELECT (max(xsd:date(?end)) AS ?max) { ' +
+            '       <SELECTIONS> ' +
+            '       ?id <END_PROPERTY> ?end . ' +
+            '     } ' +
+            '   } ' +
+            ' } ';
 
-            var defaultConfig = {
-                preferredLang: 'fi'
-            };
+            var defaultConfig = {};
 
             this.config = angular.extend({}, defaultConfig, options);
 
@@ -1389,22 +1721,212 @@
             this.facetId = this.config.facetId;
             this.startPredicate = this.config.startPredicate;
             this.endPredicate = this.config.endPredicate;
-            this.min = this.config.min;
-            this.max = this.config.max;
+
+            if (angular.isString(this.config.min)) {
+                this.minDate = timespanMapperService.parseValue(this.config.min);
+            } else {
+                this.minDate = this.config.min;
+            }
+            if (angular.isString(this.config.max)) {
+                this.maxDate = timespanMapperService.parseValue(this.config.max);
+            } else {
+                this.maxDate = this.config.max;
+            }
+
+            this.initState();
+
             if (this.config.enabled) {
                 this.enable();
             } else {
                 this.disable();
             }
 
+            this.config.mapper = timespanMapperService;
+
+            this.endpoint = facetEndpoint.getEndpoint(this.config);
+
+            this.queryTemplate = this.buildQueryTemplate(
+                this.startPredicate === this.endPredicate ? simpleTemplate : separateTemplate);
+
             this.varSuffix = this.facetId;
+
+            this.selectedValue = {};
 
             // Initial value
             var initial = _.get(options, 'initial.' + this.facetId);
             if (initial && initial.value) {
                 this._isEnabled = true;
-                this.selectedValue = initial.value;
+                this.selectedValue = {};
+                if (initial.value.start) {
+                    this.selectedValue.start = timespanMapperService.parseValue(initial.value.start);
+                }
+                if (initial.value.end) {
+                    this.selectedValue.end = timespanMapperService.parseValue(initial.value.end);
+                }
             }
+        }
+
+        function initState() {
+            if (!this.state) {
+                this.state = {};
+            }
+
+            this.state.start = {
+                minDate: this.getMinDate(),
+                maxDate: this.getMaxDate(),
+                initDate: this.getMinDate(),
+                startingDay: this.config.startingDay || 1
+            };
+
+            this.state.end = {
+                minDate: this.getMinDate(),
+                maxDate: this.getMaxDate(),
+                initDate: this.getMaxDate(),
+                startingDay: this.config.startingDay || 1
+            };
+        }
+
+        function update(constraints) {
+            var self = this;
+            if (!self.isEnabled()) {
+                return $q.when();
+            }
+
+            var otherCons = this.getOtherSelections(constraints.constraint);
+            if (self.otherCons === otherCons) {
+                // Only this facet's selection has changed
+                self.updateState({ min: self.getMinDate(), max: self.getMaxDate() });
+                return $q.when(self.state);
+            }
+            self.otherCons = otherCons;
+
+            self._isBusy = true;
+
+            return self.fetchState(constraints).then(function(state) {
+                if (!_.isEqual(self.otherCons, otherCons)) {
+                    return $q.reject('Facet state changed');
+                }
+                self.state = state;
+                self._isBusy = false;
+
+                return state;
+            });
+        }
+
+
+        function getMinDate() {
+            return _.clone(this.minDate);
+        }
+
+        function getMaxDate() {
+            return _.clone(this.maxDate);
+        }
+
+        function enable() {
+            BasicFacet.prototype.enable.call(this);
+        }
+
+        function disable() {
+            BasicFacet.prototype.disable.call(this);
+            this.initState();
+        }
+
+        function buildQueryTemplate(template) {
+            return template
+                .replace(/<START_PROPERTY>/g, this.startPredicate)
+                .replace(/<END_PROPERTY>/g, this.endPredicate)
+                .replace(/\s+/g, ' ');
+        }
+
+        function buildQuery(constraints) {
+            constraints = constraints || [];
+            var query = this.queryTemplate
+                .replace(/<SELECTIONS>/g, this.getOtherSelections(constraints));
+            return query;
+        }
+
+        function getOtherSelections(constraints) {
+            var ownConstraint = this.getConstraint();
+
+            var selections = _.reject(constraints, function(v) { return v === ownConstraint; });
+            return selections.join(' ');
+        }
+
+        // Build a query with the facet selection and use it to get the facet state.
+        function fetchState(constraints) {
+            var self = this;
+
+            var query = self.buildQuery(constraints.constraint);
+
+            return self.endpoint.getObjectsNoGrouping(query).then(function(results) {
+                var state = _.first(results);
+
+                self.updateState(state);
+
+                self._error = false;
+
+                return self.state;
+            }).catch(function(error) {
+                self._isBusy = false;
+                self._error = true;
+                return $q.reject(error);
+            });
+        }
+
+        function updateState(minMax) {
+            var self = this;
+
+            var minDate = self.getMinDate();
+            if (!minMax.min || minMax.min < minDate) {
+                minMax.min = minDate;
+            }
+
+            var maxDate = self.getMaxDate();
+            if (!minMax.max || minMax.max > maxDate) {
+                minMax.max = maxDate;
+            }
+
+            var selectedStart = self.getSelectedStartDate();
+            self.state.start.initDate = selectedStart || minMax.min;
+            self.state.start.minDate = minMax.min;
+            self.state.start.maxDate = minMax.max;
+
+            var selectedEnd = self.getSelectedEndDate();
+            self.state.end.initDate = selectedEnd || minMax.max;
+            self.state.end.minDate = minMax.min;
+            self.state.end.maxDate = minMax.max;
+
+            if (selectedEnd < self.state.start.maxDate) {
+                self.state.start.maxDate = selectedEnd;
+            }
+
+            if (selectedStart > self.state.end.minDate) {
+                self.state.end.minDate = selectedStart;
+            }
+
+            return self.state;
+        }
+
+        function getSelectedStartDate() {
+            return _.clone((this.selectedValue || {}).start);
+        }
+
+        function getSelectedEndDate() {
+            return _.clone((this.selectedValue || {}).end);
+        }
+
+        function getSelectedValue() {
+            if (!this.selectedValue) {
+                return;
+            }
+            var selectedValue = {};
+            if (this.selectedValue.start) {
+                selectedValue.start = getISOStringFromDate(this.selectedValue.start);
+            }
+            if (this.selectedValue.end) {
+                selectedValue.end = getISOStringFromDate(this.selectedValue.end);
+            }
+            return selectedValue;
         }
 
         function getConstraint() {
@@ -1412,17 +1934,22 @@
             ' <START_FILTER> ' +
             ' <END_FILTER> ';
 
+            var value = this.getSelectedValue() || {};
 
-            var start = (this.getSelectedValue() || {}).start;
-            var end = (this.getSelectedValue() || {}).end;
+            var start = value.start;
+            var end = value.end;
+
+            if (!(start || end)) {
+                return '';
+            }
 
             var startFilter =
             ' ?id <START_PROPERTY> <VAR> . ' +
-            ' FILTER(<VAR> >= "<START_VALUE>"^^<http://www.w3.org/2001/XMLSchema#date>) ';
+            ' FILTER(<http://www.w3.org/2001/XMLSchema#date>(<VAR>) >= "<START_VALUE>"^^<http://www.w3.org/2001/XMLSchema#date>) ';
 
             var endFilter =
             ' ?id <END_PROPERTY> <VAR> . ' +
-            ' FILTER(<VAR> <= "<END_VALUE>"^^<http://www.w3.org/2001/XMLSchema#date>) ';
+            ' FILTER(<http://www.w3.org/2001/XMLSchema#date>(<VAR>) <= "<END_VALUE>"^^<http://www.w3.org/2001/XMLSchema#date>) ';
 
             var startVar = '?start_' + this.varSuffix;
             var endVar = '?end_' + this.varSuffix;
@@ -1435,8 +1962,6 @@
             endFilter = endFilter.replace(/<VAR>/g, endVar);
 
             if (start) {
-                start.setHours(12, 0, 0);
-                start = dateToISOString(start);
                 result = result
                     .replace('<START_FILTER>',
                         startFilter.replace('<START_PROPERTY>',
@@ -1446,8 +1971,6 @@
                 result = result.replace('<START_FILTER>', '');
             }
             if (end) {
-                end.setHours(12, 0, 0);
-                end = dateToISOString(end);
                 result = result
                     .replace('<END_FILTER>',
                         endFilter.replace('<END_PROPERTY>',
@@ -1459,29 +1982,13 @@
             return result;
         }
 
-        function dateToISOString(date) {
-            return date.toISOString().slice(0, 10);
-        }
+        function getISOStringFromDate(d) {
+            var mm = (d.getMonth() + 1).toString();
+            var dd = d.getDate().toString();
+            mm = mm.length === 2 ? mm : '0' + mm;
+            dd = dd.length === 2 ? dd : '0' + dd;
 
-        function getPreferredLang() {
-            return this.config.preferredLang;
-        }
-
-        function getSelectedValue() {
-            return this.selectedValue;
-        }
-
-        function isEnabled() {
-            return this._isEnabled;
-        }
-
-        function enable() {
-            this._isEnabled = true;
-        }
-
-        function disable() {
-            this.selectedValue = undefined;
-            this._isEnabled = false;
+            return [d.getFullYear(), mm, dd].join('-');
         }
     }
 })();
@@ -1489,68 +1996,14 @@
 (function() {
     'use strict';
 
+    TimespanFacetController.$inject = ['$scope', '$controller', 'TimespanFacet'];
     angular.module('seco.facetedSearch')
     .controller('TimespanFacetController', TimespanFacetController);
 
     /* ngInject */
-    function TimespanFacetController($scope, _, EVENT_FACET_CHANGED,
-            EVENT_REQUEST_CONSTRAINTS, EVENT_INITIAL_CONSTRAINTS, TimespanFacet) {
-        var vm = this;
-
-        vm.changed = changed;
-        vm.enableFacet = enableFacet;
-        vm.disableFacet = disableFacet;
-        vm.isFacetEnabled = isFacetEnabled;
-
-        // Wait until the options attribute has been set.
-        var watcher = $scope.$watch('options', function(val) {
-            if (val) {
-                init();
-                watcher();
-            }
-        });
-
-        function init() {
-            var initListener = $scope.$on(EVENT_INITIAL_CONSTRAINTS, function(event, cons) {
-                var opts = _.cloneDeep($scope.options);
-                opts.initial = cons.facets;
-                vm.facet = new TimespanFacet(opts);
-                // Unregister initListener
-                initListener();
-            });
-            $scope.$emit(EVENT_REQUEST_CONSTRAINTS);
-        }
-
-        function emitChange() {
-            var val = vm.facet.getSelectedValue();
-            var args = {
-                id: vm.facet.facetId,
-                constraint: vm.facet.getConstraint(),
-                value: val
-            };
-            $scope.$emit(EVENT_FACET_CHANGED, args);
-        }
-
-        function changed() {
-            emitChange();
-        }
-
-        function enableFacet() {
-            vm.facet.enable();
-        }
-
-        function disableFacet() {
-            vm.facet.disable();
-            emitChange();
-        }
-
-        function isFacetEnabled() {
-            if (!vm.facet) {
-                return false;
-            }
-            return vm.facet.isEnabled();
-        }
-
+    function TimespanFacetController($scope, $controller, TimespanFacet) {
+        var args = { $scope: $scope, FacetImpl: TimespanFacet };
+        return $controller('AbstractFacetController', args);
     }
 })();
 
@@ -1565,22 +2018,35 @@
     * @description
     * A facet for selecting date ranges.
     *
-    * Does not make any SPARQL queries, just generates SPARQL triple patterns
-    * out of the selected dates for other facets to use.
+    * Restricts the selectable dates by getting the minimum and maximum dates
+    * based on the underlying data, and facet selections.
+    *
+    * Currently only supports values of the type <http://www.w3.org/2001/XMLSchema#date>,
+    * and there is no support for timezones. Any timezones in the values retrieved
+    * will be discarded.
     *
     * @param {Object} options The configuration object with the following structure:
     * - **facetId** - `{string}` - A friendly id for the facet.
     *   Should be unique in the set of facets, and should be usable as a SPARQL variable.
-    * - **predicate** - `{string}` - The predicate or property path that defines the facet values.
     * - **name** - `{string}` - The title of the facet. Will be displayed to end users.
     * - **startPredicate** - `{string}` - The predicate or property path that defines
     *   the start date of the date range.
     * - **endPredicate** - `{string}` - The predicate or property path that defines
     *   the end date of the date range.
-    * - **[min]** - `{string|Date}` - The earliest selectable date.
-    * - **[max]** - `{string|Date}` - The latest selectable date.
+    * - **[min]** - `{string|Date}` - The earliest selectable date. If string, should
+    *   be in ISO format. Giving a Date object that has a predefined timezone other
+    *   than the user's may lead to timezone issues.
+    * - **[max]** - `{string|Date}` - The earliest selectable date. If string, should
+    *   be in ISO format. Giving a Date object that has a predefined timezone other
+    *   than the user's may lead to timezone issues.
     * - **[enabled]** `{boolean}` - Whether or not the facet is enabled by default.
     *   If undefined, the facet will be disabled by default.
+    * - **[endpointUrl]** `{string}` - The URL of the SPARQL endpoint.
+    *   Optional, as it can also be given globally in
+    *   {@link seco.facetedSearch.FacetHandler `FacetHandler`} config.
+    * - **[headers]** `{Object}` - Additional HTTP headers.
+    * - **[priority]** - `{number}` - Priority for constraint sorting.
+    *   Undefined by default.
     */
     angular.module('seco.facetedSearch')
     .directive('secoTimespanFacet', timespanFacet);
@@ -1598,18 +2064,220 @@
     }
 })();
 
+
+/*
+* Facet for selecting a date range
+*/
+(function() {
+    'use strict';
+
+    CheckboxFacet.$inject = ['$q', '_', 'facetEndpoint', 'BasicFacet', 'PREFIXES'];
+    angular.module('seco.facetedSearch')
+    .factory('CheckboxFacet', CheckboxFacet);
+
+    /* ngInject */
+    function CheckboxFacet($q, _, facetEndpoint, BasicFacet, PREFIXES) {
+        CheckboxFacet.prototype = Object.create(BasicFacet.prototype);
+
+        CheckboxFacet.prototype.getConstraint = getConstraint;
+        CheckboxFacet.prototype.buildQueryTemplate = buildQueryTemplate;
+        CheckboxFacet.prototype.buildQuery = buildQuery;
+        CheckboxFacet.prototype.fetchState = fetchState;
+
+        return CheckboxFacet;
+
+        function CheckboxFacet(options) {
+
+            var queryTemplate = PREFIXES +
+            ' SELECT DISTINCT ?value ?facet_text ?cnt WHERE { ' +
+            '  <PREDICATE_UNION> ' +
+            ' } ';
+
+            var predTemplate =
+            ' { ' +
+            '  SELECT DISTINCT (COUNT(DISTINCT(?id)) AS ?cnt) ("<ID>" AS ?value)' +
+            '     ("<LABEL>" AS ?facet_text) { ' +
+            '   <SELECTIONS> ' +
+            '   BIND("<ID>" AS ?val) ' +
+            '   <PREDICATE> ' +
+            '  } GROUP BY ?val ' +
+            ' } ';
+
+            var defaultConfig = {
+                usePost: true
+            };
+
+            this.config = angular.extend({}, defaultConfig, options);
+
+            this.name = this.config.name;
+            this.facetId = this.config.facetId;
+            this.state = {};
+
+            if (this.config.enabled) {
+                this.enable();
+            } else {
+                this.disable();
+            }
+
+            this.endpoint = facetEndpoint.getEndpoint(this.config);
+
+            this.queryTemplate = this.buildQueryTemplate(queryTemplate, predTemplate);
+
+            this.selectedValue = {};
+
+            // Initial value
+            var initial = _.get(options, 'initial[' + this.facetId + '].value');
+            if (initial) {
+                this._isEnabled = true;
+                this.selectedValue = { value: initial };
+            }
+        }
+
+        function buildQueryTemplate(template, predTemplate) {
+            var unions = '';
+            this.config.choices.forEach(function(pred) {
+                var union = predTemplate
+                    .replace(/<ID>/g, pred.id)
+                    .replace(/<PREDICATE>/g, pred.pattern)
+                    .replace(/<LABEL>/g, pred.label);
+                if (unions) {
+                    union = ' UNION ' + union;
+                }
+                unions += union;
+            });
+
+            return template
+                .replace(/<PREDICATE_UNION>/g, unions)
+                .replace(/\s+/g, ' ');
+        }
+
+        function buildQuery(constraints) {
+            constraints = constraints || [];
+            var query = this.queryTemplate
+                .replace(/<SELECTIONS>/g, this.getOtherSelections(constraints));
+            return query;
+        }
+
+        // Build a query with the facet selection and use it to get the facet state.
+        function fetchState(constraints) {
+            var self = this;
+
+            var query = self.buildQuery(constraints.constraint);
+
+            return self.endpoint.getObjectsNoGrouping(query).then(function(results) {
+                self._error = false;
+                return results;
+            }).catch(function(error) {
+                self._isBusy = false;
+                self._error = true;
+                return $q.reject(error);
+            });
+        }
+
+        function getConstraint() {
+            var self = this;
+            var selections = _.compact(self.getSelectedValue());
+            if (!(selections.length)) {
+                return;
+            }
+            var res = '';
+            selections.forEach(function(val) {
+                var cons = _.get(_.find(self.config.choices, ['id', val.replace(/"/g, '')]), 'pattern');
+                if (res) {
+                    cons = ' UNION { ' + cons + ' } ';
+                } else if (selections.length > 1) {
+                    cons = ' { ' + cons + ' } ';
+                }
+                res += cons;
+            });
+
+            return res;
+        }
+    }
+})();
+
+(function() {
+    'use strict';
+
+    CheckboxFacetController.$inject = ['$scope', '$controller', 'CheckboxFacet'];
+    angular.module('seco.facetedSearch')
+    .controller('CheckboxFacetController', CheckboxFacetController);
+
+    /* ngInject */
+    function CheckboxFacetController($scope, $controller, CheckboxFacet) {
+        var args = { $scope: $scope, FacetImpl: CheckboxFacet };
+        return $controller('AbstractFacetController', args);
+    }
+})();
+
+(function() {
+    'use strict';
+
+    /**
+    * @ngdoc directive
+    * @name seco.facetedSearch.directive:secoCheckboxFacet
+    * @restrict 'E'
+    * @element ANY
+    * @description
+    * A facet for a checkbox selector based on a triple pattern.
+    *
+    * If multiple checkboxes are selected, the resulting SPARQL constraint
+    * will be a union of the selections.
+    *
+    * @param {Object} options The configuration object with the following structure:
+    * - **facetId** - `{string}` - A friendly id for the facet.
+    *   Should be unique in the set of facets, and should be usable as a SPARQL variable.
+    * - **name** - `{string}` - The title of the facet. Will be displayed to end users.
+    * - **choices** - `{Array}` - A list of choices and their definitions.
+    *   Each element in the list should be an object:
+    *   `{ id: 'uniqueIdForThisChoice', pattern: '[SPARQL pattern]', label: 'choice label' }`.
+    *   `[SPARQL pattern]` is any SPARQL pattern where `?id` is the variable bound to the
+    *   result resource. Example:
+    *       {
+    *         id: 'hobby',
+    *         pattern: '?id <http://schema.org/hobby> [] .',
+    *         label: 'Hobby'
+    *       }
+    *   This would create a checkbox which would restrict the results to those
+    *   resources that have a value for the property `<http://schema.org/hobby>`.
+    * - **[enabled]** `{boolean}` - Whether or not the facet is enabled by default.
+    *   If undefined, the facet will be disabled by default.
+    * - **[endpointUrl]** `{string}` - The URL of the SPARQL endpoint.
+    *   Optional, as it can also be given globally in
+    *   {@link seco.facetedSearch.FacetHandler `FacetHandler`} config.
+    * - **[headers]** `{Object}` - Additional HTTP headers.
+    * - **[priority]** - `{number}` - Priority for constraint sorting.
+    *   Undefined by default.
+    */
+    angular.module('seco.facetedSearch')
+    .directive('secoCheckboxFacet', checkboxFacet);
+
+    function checkboxFacet() {
+        return {
+            restrict: 'E',
+            scope: {
+                options: '='
+            },
+            controller: 'CheckboxFacetController',
+            controllerAs: 'vm',
+            templateUrl: 'src/facets/checkbox/facets.checkbox-facet.directive.html'
+        };
+    }
+})();
+
 /*
 * Facet for selecting a simple value.
 */
 (function() {
     'use strict';
 
+    HierarchyFacet.$inject = ['$q', '_', 'BasicFacet', 'PREFIXES'];
     angular.module('seco.facetedSearch')
 
     .factory('HierarchyFacet', HierarchyFacet);
 
     /* ngInject */
-    function HierarchyFacet(_, BasicFacet) {
+    function HierarchyFacet($q, _, BasicFacet, PREFIXES) {
 
         HierarchyFacetConstructor.prototype = Object.create(BasicFacet.prototype);
 
@@ -1617,16 +2285,13 @@
         HierarchyFacetConstructor.prototype.getConstraint = getConstraint;
         HierarchyFacetConstructor.prototype.buildQueryTemplate = buildQueryTemplate;
         HierarchyFacetConstructor.prototype.buildQuery = buildQuery;
-        HierarchyFacetConstructor.prototype.getHierarchyClasses = getHierarchyClasses;
+        HierarchyFacetConstructor.prototype.fetchState = fetchState;
 
         return HierarchyFacetConstructor;
 
         function HierarchyFacetConstructor(options) {
 
-            var queryTemplate =
-            ' PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ' +
-            ' PREFIX skos: <http://www.w3.org/2004/02/skos/core#> ' +
-            ' PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> ' +
+            var queryTemplate = PREFIXES +
             ' SELECT DISTINCT ?cnt ?facet_text ?value WHERE {' +
             ' { ' +
             '  { ' +
@@ -1639,26 +2304,25 @@
             '  {' +
             '   SELECT DISTINCT ?cnt ?value ?facet_text {' +
             '    {' +
-            '     SELECT DISTINCT (count(DISTINCT ?id) as ?cnt) ?value ?class {' +
-            '      VALUES ?class { ' +
-            '       <HIERARCHY_CLASSES> ' +
-            '      } ' +
-            '      ?value <PROPERTY> ?class . ' +
-            '      ?h <PROPERTY> ?value . ' +
+            '     SELECT DISTINCT (count(DISTINCT ?id) as ?cnt) ?value ?hierarchy ?lvl {' +
+            '      { SELECT DISTINCT ?h { [] <ID> ?h . <SPECIFIER> } } ' +
+            '      ?h (<HIERARCHY>)* ?value . ' +
+            '      <LEVELS> ' +
             '      ?id <ID> ?h .' +
             '      <OTHER_SELECTIONS> ' +
-            '     } GROUP BY ?class ?value ' +
+            '     } GROUP BY ?hierarchy ?value ?lvl ORDER BY ?hierarchy ' +
             '    } ' +
             '    FILTER(BOUND(?value))' +
+            '    BIND(COALESCE(?value, <http://ldf.fi/NONEXISTENT_URI>) AS ?labelValue) ' +
             '    <LABEL_PART> ' +
-            '    BIND(COALESCE(?lbl, STR(?value)) as ?label)' +
-            '    BIND(IF(?value = ?class, ?label, CONCAT("-- ", ?label)) as ?facet_text)' +
-            '    BIND(IF(?value = ?class, 0, 1) as ?order)' +
-            '   } ORDER BY ?class ?order ?facet_text' +
+            '    BIND(COALESCE(?lbl, STR(?value)) as ?label) ' +
+            '    BIND(CONCAT(?lvl, ?label) as ?facet_text)' +
+            '   } ' +
             '  } ' +
             ' } ';
 
             options.queryTemplate = options.queryTemplate || queryTemplate;
+            options.depth = angular.isUndefined(options.depth) ? 3 : options.depth;
 
             BasicFacet.call(this, options);
 
@@ -1672,12 +2336,7 @@
             }
 
             var triplePatternTemplate =
-            ' VALUES ?<CLASS_VAR> { ' +
-            '  <HIERARCHY_CLASSES> ' +
-            ' } ' +
-            ' ?<H_VAR> <PROPERTY> ?<CLASS_VAR> . ' +
-            ' ?<V_VAR> <PROPERTY> ?<H_VAR> . ' +
-            ' ?id <ID> ?<V_VAR> .';
+                ' ?<V_VAR> (<HIERARCHY>)* <SELECTED_VAL> . <SPECIFIER> ?id <ID> ?<V_VAR> . ';
 
             this.triplePatternTemplate = this.buildQueryTemplate(triplePatternTemplate);
         }
@@ -1689,36 +2348,20 @@
                     value: this.predicate
                 },
                 {
-                    placeHolder: /<PROPERTY>/g,
+                    placeHolder: /<HIERARCHY>/g,
                     value: this.config.hierarchy
                 },
                 {
                     placeHolder: /<LABEL_PART>/g,
-                    value: this.config.labelPart
+                    value: this.labelPart
                 },
                 {
                     placeHolder: /<NO_SELECTION_STRING>/g,
                     value: this.config.noSelectionString
-                },
-                {
-                    placeHolder: /<H_VAR>/g,
-                    value: 'seco_h_' + this.facetId
                 },
                 {
                     placeHolder: /<V_VAR>/g,
                     value: 'seco_v_' + this.facetId
-                },
-                {
-                    placeHolder: /<CLASS_VAR>/g,
-                    value: 'seco_class_' + this.facetId
-                },
-                {
-                    placeHolder: /<LABEL_PART>/g,
-                    value: this.config.labelPart
-                },
-                {
-                    placeHolder: /<NO_SELECTION_STRING>/g,
-                    value: this.config.noSelectionString
                 },
                 {
                     placeHolder: /\s+/g,
@@ -1732,16 +2375,13 @@
             return template;
         }
 
-        function getHierarchyClasses() {
-            return this.config.classes || [];
-        }
-
         function getConstraint() {
             if (!this.getSelectedValue()) {
                 return;
             }
             var res = this.triplePatternTemplate
-                .replace(/<HIERARCHY_CLASSES>/g, this.getSelectedValue());
+                .replace(/<SELECTED_VAL>/g, this.getSelectedValue())
+                .replace(/<SPECIFIER>/g, this.getSpecifier().replace(/\?value/g, '?seco_v_' + this.facetId));
 
             return res;
         }
@@ -1754,16 +2394,43 @@
             return val;
         }
 
+        function fetchState(constraints) {
+            var self = this;
+
+            var query = self.buildQuery(constraints.constraint);
+
+            return self.endpoint.getObjectsNoGrouping(query).then(function(results) {
+                self._error = false;
+                return results;
+            }).catch(function(error) {
+                self._isBusy = false;
+                self._error = true;
+                return $q.reject(error);
+            });
+        }
+
         // Build the facet query
         function buildQuery(constraints) {
             constraints = constraints || [];
             var query = this.queryTemplate
                 .replace(/<OTHER_SELECTIONS>/g, this.getOtherSelections(constraints))
-                .replace(/<HIERARCHY_CLASSES>/g,
-                    this.getSelectedValue() || this.getHierarchyClasses().join(' '))
-                .replace(/<PREF_LANG>/g, this.getPreferredLang());
+                .replace(/<LEVELS>/g, buildLevels(this.config.depth, this.config.hierarchy))
+                .replace(/<SPECIFIER>/g, this.getSpecifier().replace(/\?value\b/g, '?h'));
 
             return query;
+        }
+
+        function buildLevels(count, hierarchyProperty) {
+            var res = '';
+            var template = ' OPTIONAL { ?value <PROPERTY> ?u0 . <HIERARCHY> }';
+            for (var i = count; i > 0; i--) {
+                var hierarchy = _.map(_.range(i - 1), function(n) { return '?u' + n + ' <PROPERTY> ?u' + (n + 1) + ' . '; }).join('') +
+                    'BIND(CONCAT(' + _.map(_.rangeRight(i), function(n) { return 'STR(?u' + n + '),'; }).join('') + 'STR(?value)) AS ?_h) ' +
+                    'BIND("' + _.repeat('-', i) + ' " AS ?lvl)';
+                res = res += template.replace('<HIERARCHY>', hierarchy);
+            }
+            var end = ' OPTIONAL { BIND("" AS ?lvl) } BIND(COALESCE(?_h, STR(?value)) AS ?hierarchy) ';
+            return res.replace(/<PROPERTY>/g, hierarchyProperty) + end;
         }
     }
 })();
@@ -1771,6 +2438,7 @@
 (function() {
     'use strict';
 
+    HierarchyFacetController.$inject = ['$scope', '$controller', 'HierarchyFacet'];
     angular.module('seco.facetedSearch')
     .controller('HierarchyFacetController', HierarchyFacetController);
 
@@ -1797,21 +2465,34 @@
     *   Should be unique in the set of facets, and should be usable as a SPARQL variable.
     * - **predicate** - `{string}` - The predicate or property path that defines the facet values.
     * - **hierarchy** - `{string}` - The predicate or property path that defines the hierarchy of values.
-    * - **classes** - `{Array}` - The top level resources (URIs) of the hierarchy.
+    * - **depth** - `{number}` - The maximum depth of the hierarchy. Default is 3.
     * - **name** - `{string}` - The title of the facet. Will be displayed to end users.
+    * - **[specifier]** `{string}` - Restriction on the values as a SPARQL triple pattern.
+    *   Helpful if multiple facets need to be generated from the same predicate,
+    *   or not all values defined by the given predicate should be selectable.
+    *   `?value` is the variable to which the facet selection is bound.
+    *   For example, if `predicate` has been defined as
+    *   `<http://purl.org/dc/terms/subject>` (subject),
+    *   and there are different kinds of subjects for the resource, and you want
+    *   to select people (`<http://xmlns.com/foaf/0.1/Person>`) only, you would
+    *   define `specifier` as `'?value a <http://xmlns.com/foaf/0.1/Person> .'`.
     * - **[enabled]** `{boolean}` - Whether or not the facet is enabled by default.
     *   If undefined, the facet will be disabled by default.
     * - **[endpointUrl]** `{string}` - The URL of the SPARQL endpoint.
     *   Optional, as it can also be given globally in
     *   {@link seco.facetedSearch.FacetHandler `FacetHandler`} config.
-    * - **[preferredLang]** - `{string}` - The language tag that is preferred
+    * - **[headers]** `{Object}` - Additional HTTP headers.
+    * - **[preferredLang]** - `{string|Array}` - The language tag that is preferred
     *   when getting labels for facet values, in case the value is a resource.
     *   The default is 'en'.
-    *   Currently only one language can be given.
-    *   If a label is not found in the given language, a label without a
+    *   Can also be a list of languages, in which case the languages are tried
+    *   in order.
+    *   If a label is not found in the given languages, a label without a
     *   language tag is used. If a label is still not found,
     *   the end part of the resource URI is used.
     *   Supported label properties are `skos:prefLabel`, and `rdfs:label`.
+    * - **[priority]** - `{number}` - Priority for constraint sorting.
+    *   Undefined by default.
     */
     angular.module('seco.facetedSearch')
     .directive('secoHierarchyFacet', hierarchyFacet);
@@ -1832,215 +2513,151 @@
 angular.module('seco.facetedSearch').run(['$templateCache', function($templateCache) {
   'use strict';
 
-  $templateCache.put('src/facets/basic/facets.basic-facet.directive.html',
+  $templateCache.put('src/facets/facets.facet-wrapper.directive.html',
     "<div class=\"facet-wrapper\">\n" +
-    "  <div class=\"facet\" ng-if=vm.facet.isEnabled()>\n" +
+    "  <div class=\"facet\">\n" +
     "    <div class=\"well well-sm\">\n" +
     "      <div class=\"row\">\n" +
     "        <div class=\"col-xs-12 text-left\">\n" +
     "          <div class=\"alert alert-danger\" ng-if=\"vm.error\">{{ vm.error|limitTo:100 }}</div>\n" +
-    "          <span spinner-key=\"vm.getSpinnerKey()\" spinner-start-active=\"true\"\n" +
-    "            us-spinner=\"{radius:30, width:8, length: 40}\" ng-if=\"vm.isLoading()\"></span>\n" +
-    "          <h5 class=\"facet-name pull-left\">{{ vm.facet.name }}</h5>\n" +
-    "          <button\n" +
-    "            ng-disabled=\"vm.isLoading()\"\n" +
-    "            ng-click=\"vm.disableFacet()\"\n" +
-    "            class=\"btn btn-danger btn-xs pull-right glyphicon glyphicon-remove\">\n" +
-    "          </button>\n" +
-    "          <div class=\"facet-input-container\">\n" +
-    "            <input\n" +
-    "            ng-disabled=\"vm.isLoading()\"\n" +
-    "            type=\"text\"\n" +
-    "            class=\"form-control\"\n" +
-    "            ng-model=\"textFilter\" />\n" +
-    "            <select\n" +
-    "              ng-change=\"vm.changed()\"\n" +
-    "              ng-disabled=\"vm.isLoading()\"\n" +
-    "              ng-attr-size=\"{{ vm.getFacetSize(vm.facet.getState()) }}\"\n" +
-    "              id=\"{{ ::vm.facet.name + '_select' }}\"\n" +
-    "              class=\"selector form-control\"\n" +
-    "              ng-options=\"value as (value.text + ' (' + value.count + ')') for value in vm.facet.getState() | textWithSelection:textFilter:vm.facet.selectedValue track by value.value\"\n" +
-    "              ng-model=\"vm.facet.selectedValue\">\n" +
-    "            </select>\n" +
-    "          </div>\n" +
-    "        </div>\n" +
-    "      </div>\n" +
-    "    </div>\n" +
-    "  </div>\n" +
-    "  <div class=\"facet\" ng-if=!vm.facet.isEnabled()>\n" +
-    "    <div class=\"well well-sm\">\n" +
-    "      <div class=\"row\">\n" +
-    "        <div class=\"col-xs-12\">\n" +
     "          <div class=\"row vertical-align\">\n" +
     "            <div class=\"col-xs-10 text-left\">\n" +
-    "              <h5 class=\"facet-name\">{{ vm.facet.name }}</h5>\n" +
+    "              <h5 class=\"facet-name pull-left\">{{ vm.facet.name }}</h5>\n" +
     "            </div>\n" +
     "            <div class=\"facet-enable-btn-container col-xs-2 text-right\">\n" +
     "              <button\n" +
-    "                ng-disabled=\"vm.isLoading()\"\n" +
-    "                ng-click=\"vm.enableFacet(id)\"\n" +
-    "                class=\"facet-enable-btn btn btn-default btn-xs pull-right glyphicon glyphicon-plus\">\n" +
+    "                 ng-disabled=\"vm.isLoading()\"\n" +
+    "                 ng-click=\"vm.toggleFacetEnabled()\"\n" +
+    "                 class=\"btn btn-default btn-facet-toggle btn-xs pull-right\"\n" +
+    "                 ng-class=\"vm.facet.isEnabled() ? 'btn-facet-close' : 'btn-facet-open'\">\n" +
+    "                <span class=\"glyphicon\" ng-class=\"vm.facet.isEnabled() ? 'glyphicon-minus' : 'glyphicon-plus'\"></span>\n" +
     "              </button>\n" +
     "            </div>\n" +
     "          </div>\n" +
     "        </div>\n" +
     "      </div>\n" +
+    "      <div class=\"row\" ng-if=\"vm.facet.isEnabled()\">\n" +
+    "        <div class=\"col-xs-12 text-left\">\n" +
+    "          <span spinner-key=\"vm.getSpinnerKey()\" spinner-start-active=\"true\"\n" +
+    "              us-spinner=\"{radius:15, width:6, length: 20}\" ng-if=\"vm.isLoading()\"></span>\n" +
+    "          <div class=\"facet-input-container\" ng-transclude></div>\n" +
+    "        </div>\n" +
+    "      </div>\n" +
     "    </div>\n" +
     "  </div>\n" +
     "</div>\n"
+  );
+
+
+  $templateCache.put('src/facets/basic/facets.basic-facet.directive.html',
+    "<seco-facet-wrapper>\n" +
+    "  <input\n" +
+    "    ng-disabled=\"vm.isLoading()\"\n" +
+    "    type=\"text\"\n" +
+    "    class=\"form-control\"\n" +
+    "    ng-model=\"textFilter\" />\n" +
+    "  <select\n" +
+    "    ng-change=\"vm.changed()\"\n" +
+    "    ng-disabled=\"vm.isLoading()\"\n" +
+    "    ng-attr-size=\"{{ vm.getFacetSize(vm.facet.getState()) }}\"\n" +
+    "    id=\"{{ ::vm.facet.name + '_select' }}\"\n" +
+    "    class=\"selector form-control\"\n" +
+    "    ng-options=\"value as (value.text + ' (' + value.count + ')') for value in vm.facet.getState() | textWithSelection:textFilter:vm.facet.selectedValue track by value.value\"\n" +
+    "    ng-model=\"vm.facet.selectedValue\">\n" +
+    "  </select>\n" +
+    "</seco-facet-wrapper>\n"
   );
 
 
   $templateCache.put('src/facets/text/facets.text-facet.directive.html',
-    "<div class=\"facet-wrapper\">\n" +
-    "  <span us-spinner=\"{radius:30, width:8, length: 40}\" ng-if=\"vm.isLoading()\"></span>\n" +
-    "  <div class=\"facet\" ng-if=vm.isFacetEnabled()>\n" +
-    "    <div class=\"well well-sm\">\n" +
-    "      <div class=\"row\">\n" +
-    "        <div class=\"col-xs-12 text-left\">\n" +
-    "          <h5 class=\"facet-name pull-left\">{{ vm.facet.name }}</h5>\n" +
-    "          <button\n" +
-    "            ng-disabled=\"vm.isLoading()\"\n" +
-    "            ng-click=\"vm.disableFacet()\"\n" +
-    "            class=\"btn btn-danger btn-xs pull-right glyphicon glyphicon-remove\">\n" +
-    "          </button>\n" +
-    "        </div>\n" +
-    "      </div>\n" +
-    "      <div class=\"row\">\n" +
-    "        <div class=\"col-xs-12 text-left\">\n" +
-    "          <div class=\"facet-input-container\">\n" +
-    "            <p class=\"input-group\">\n" +
-    "            <input type=\"text\" class=\"form-control\"\n" +
-    "            ng-change=\"vm.changed()\"\n" +
-    "            ng-disabled=\"vm.isLoading()\"\n" +
-    "            ng-model=\"vm.facet.selectedValue\"\n" +
-    "            ng-model-options=\"{ debounce: 1000 }\">\n" +
-    "            </input>\n" +
-    "            <span class=\"input-group-btn\">\n" +
-    "              <button type=\"button\" class=\"btn btn-default\"\n" +
-    "                ng-disabled=\"vm.isDisabled()\"\n" +
-    "                ng-click=\"vm.clear()\">\n" +
-    "                <i class=\"glyphicon glyphicon-remove\"></i>\n" +
-    "              </button>\n" +
-    "            </span>\n" +
-    "            </p>\n" +
-    "          </div>\n" +
-    "        </div>\n" +
-    "      </div>\n" +
-    "    </div>\n" +
-    "  </div>\n" +
-    "  <div class=\"facet\" ng-if=!vm.isFacetEnabled()>\n" +
-    "    <div class=\"well well-sm\">\n" +
-    "      <div class=\"row\">\n" +
-    "        <div class=\"col-xs-12\">\n" +
-    "          <div class=\"row vertical-align\">\n" +
-    "            <div class=\"col-xs-10 text-left\">\n" +
-    "              <h5 class=\"facet-name\">{{ vm.facet.name }}</h5>\n" +
-    "            </div>\n" +
-    "            <div class=\"facet-enable-btn-container col-xs-2 text-right\">\n" +
-    "              <button\n" +
-    "                ng-disabled=\"vm.isLoading()\"\n" +
-    "                ng-click=\"vm.enableFacet(id)\"\n" +
-    "                class=\"facet-enable-btn btn btn-default btn-xs pull-right glyphicon glyphicon-plus\">\n" +
-    "              </button>\n" +
-    "            </div>\n" +
-    "          </div>\n" +
-    "        </div>\n" +
-    "      </div>\n" +
-    "    </div>\n" +
-    "  </div>\n" +
-    "</div>\n"
+    "<seco-facet-wrapper>\n" +
+    "  <p class=\"input-group\">\n" +
+    "    <input type=\"text\" class=\"form-control\"\n" +
+    "      ng-change=\"vm.changed()\"\n" +
+    "      ng-disabled=\"vm.isLoading()\"\n" +
+    "      ng-model=\"vm.facet.selectedValue\"\n" +
+    "      ng-model-options=\"{ debounce: 1000 }\">\n" +
+    "    </input>\n" +
+    "    <span class=\"input-group-btn\">\n" +
+    "      <button type=\"button\" class=\"btn btn-default\"\n" +
+    "        ng-disabled=\"vm.isDisabled()\"\n" +
+    "        ng-click=\"vm.clear()\">\n" +
+    "        <i class=\"glyphicon glyphicon-remove\"></i>\n" +
+    "      </button>\n" +
+    "    </span>\n" +
+    "  </p>\n" +
+    "</seco-facet-wrapper>\n"
   );
 
 
   $templateCache.put('src/facets/timespan/facets.timespan-facet.directive.html',
-    "<div class=\"facet-wrapper\">\n" +
-    "  <span us-spinner=\"{radius:30, width:8, length: 40}\" ng-if=\"vm.isLoading()\"></span>\n" +
-    "  <div class=\"facet\" ng-if=vm.isFacetEnabled()>\n" +
-    "    <div class=\"well well-sm\">\n" +
-    "      <div class=\"row\">\n" +
-    "        <div class=\"col-xs-12 text-left\">\n" +
-    "          <h5 class=\"facet-name pull-left\">{{ vm.facet.name }}</h5>\n" +
-    "          <button\n" +
+    "<seco-facet-wrapper>\n" +
+    "  <div class=\"row no-gutter\">\n" +
+    "    <div class=\"col-md-6 facet-date-left\">\n" +
+    "      <span class=\"input-group\">\n" +
+    "        <span class=\"input-group-btn\">\n" +
+    "          <button type=\"button\" class=\"btn btn-default\"\n" +
     "            ng-disabled=\"vm.isLoading()\"\n" +
-    "            ng-click=\"vm.disableFacet()\"\n" +
-    "            class=\"btn btn-danger btn-xs pull-right glyphicon glyphicon-remove\">\n" +
+    "            ng-click=\"startDate.opened = !startDate.opened\">\n" +
+    "            <i class=\"glyphicon glyphicon-calendar\"></i>\n" +
     "          </button>\n" +
-    "        </div>\n" +
-    "      </div>\n" +
-    "      <div class=\"row no-gutter\">\n" +
-    "        <div class=\"col-md-6 facet-date-left\">\n" +
-    "          <span class=\"input-group\">\n" +
-    "            <span class=\"input-group-btn\">\n" +
-    "              <button type=\"button\" class=\"btn btn-default\"\n" +
-    "                ng-click=\"startDate.opened = !startDate.opened\">\n" +
-    "                <i class=\"glyphicon glyphicon-calendar\"></i>\n" +
-    "              </button>\n" +
-    "            </span>\n" +
-    "            <input type=\"text\" class=\"form-control\"\n" +
-    "            uib-datepicker-popup=\"\"\n" +
-    "            ng-disabled=\"vm.isDisabled()\"\n" +
-    "            ng-change=\"vm.changed()\"\n" +
-    "            ng-readonly=\"true\"\n" +
-    "            ng-model=\"vm.facet.selectedValue.start\"\n" +
-    "            is-open=\"startDate.opened\"\n" +
-    "            min-date=\"vm.facet.min\"\n" +
-    "            max-date=\"vm.facet.max\"\n" +
-    "            init-date=\"vm.facet.min\"\n" +
-    "            show-button-bar=\"false\"\n" +
-    "            starting-day=\"1\"\n" +
-    "            ng-required=\"true\"\n" +
-    "            close-text=\"Close\" />\n" +
-    "          </span>\n" +
-    "        </div>\n" +
-    "        <div class=\"col-md-6 facet-date-right\">\n" +
-    "          <span class=\"input-group\">\n" +
-    "            <span class=\"input-group-btn\">\n" +
-    "              <button type=\"button\" class=\"btn btn-default\"\n" +
-    "                ng-click=\"endDate.opened = !endDate.opened\">\n" +
-    "                <i class=\"glyphicon glyphicon-calendar\"></i>\n" +
-    "              </button>\n" +
-    "            </span>\n" +
-    "            <input type=\"text\" class=\"form-control\"\n" +
-    "            uib-datepicker-popup=\"\"\n" +
-    "            ng-disabled=\"vm.isDisabled()\"\n" +
-    "            ng-readonly=\"true\"\n" +
-    "            ng-change=\"vm.changed(id)\"\n" +
-    "            ng-model=\"vm.facet.selectedValue.end\"\n" +
-    "            is-open=\"endDate.opened\"\n" +
-    "            min-date=\"vm.facet.selectedValue.start || vm.facet.min\"\n" +
-    "            max-date=\"vm.facet.max\"\n" +
-    "            init-date=\"vm.facet.selectedValue.start || vm.facet.min\"\n" +
-    "            show-button-bar=\"false\"\n" +
-    "            starting-day=\"1\"\n" +
-    "            ng-required=\"true\"\n" +
-    "            close-text=\"Close\" />\n" +
-    "          </span>\n" +
+    "        </span>\n" +
+    "        <input type=\"text\" class=\"form-control\"\n" +
+    "          uib-datepicker-popup=\"\"\n" +
+    "          ng-readonly=\"true\"\n" +
+    "          ng-change=\"vm.changed()\"\n" +
+    "          ng-model=\"vm.facet.selectedValue.start\"\n" +
+    "          is-open=\"startDate.opened\"\n" +
+    "          show-button-bar=\"false\"\n" +
+    "          datepicker-options=\"vm.facet.state.start\"\n" +
+    "          close-text=\"Close\" />\n" +
+    "      </span>\n" +
+    "    </div>\n" +
+    "    <div class=\"col-md-6 facet-date-right\">\n" +
+    "      <span class=\"input-group\">\n" +
+    "        <span class=\"input-group-btn\">\n" +
+    "          <button type=\"button\" class=\"btn btn-default\"\n" +
+    "            ng-disabled=\"vm.isLoading()\"\n" +
+    "            ng-click=\"endDate.opened = !endDate.opened\">\n" +
+    "            <i class=\"glyphicon glyphicon-calendar\"></i>\n" +
+    "          </button>\n" +
+    "        </span>\n" +
+    "        <input type=\"text\" class=\"form-control\"\n" +
+    "          uib-datepicker-popup=\"\"\n" +
+    "          ng-readonly=\"true\"\n" +
+    "          ng-change=\"vm.changed()\"\n" +
+    "          ng-model=\"vm.facet.selectedValue.end\"\n" +
+    "          is-open=\"endDate.opened\"\n" +
+    "          show-button-bar=\"false\"\n" +
+    "          datepicker-options=\"vm.facet.state.end\"\n" +
+    "          close-text=\"Close\" />\n" +
+    "      </span>\n" +
+    "    </div>\n" +
+    "  </div>\n" +
+    "</seco-facet-wrapper>\n"
+  );
+
+
+  $templateCache.put('src/facets/checkbox/facets.checkbox-facet.directive.html',
+    "<seco-facet-wrapper>\n" +
+    "  <div class=\"row\">\n" +
+    "    <div class=\"col-xs-12 text-left\">\n" +
+    "      <div class=\"facet-input-container\">\n" +
+    "        <div class=\"checkbox\" ng-repeat=\"choice in vm.facet.getState()\">\n" +
+    "        <label>\n" +
+    "          <input type=\"checkbox\"\n" +
+    "            checklist-change=\"vm.changed()\"\n" +
+    "            ng-disabled=\"(vm.isLoading() || !choice.count)\"\n" +
+    "            class=\"selector checkbox\"\n" +
+    "            checklist-model=\"vm.facet.selectedValue.value\"\n" +
+    "            checklist-value=\"choice.value\" />\n" +
+    "          {{ choice.text }} ({{ choice.count }})\n" +
+    "        </label>\n" +
     "        </div>\n" +
     "      </div>\n" +
     "    </div>\n" +
     "  </div>\n" +
-    "  <div class=\"facet\" ng-if=!vm.isFacetEnabled()>\n" +
-    "    <div class=\"well well-sm\">\n" +
-    "      <div class=\"row\">\n" +
-    "        <div class=\"col-xs-12\">\n" +
-    "          <div class=\"row vertical-align\">\n" +
-    "            <div class=\"col-xs-10 text-left\">\n" +
-    "              <h5 class=\"facet-name\">{{ vm.facet.name }}</h5>\n" +
-    "            </div>\n" +
-    "            <div class=\"facet-enable-btn-container col-xs-2 text-right\">\n" +
-    "              <button\n" +
-    "                ng-disabled=\"vm.isLoading()\"\n" +
-    "                ng-click=\"vm.enableFacet(id)\"\n" +
-    "                class=\"facet-enable-btn btn btn-default btn-xs pull-right glyphicon glyphicon-plus\">\n" +
-    "              </button>\n" +
-    "            </div>\n" +
-    "          </div>\n" +
-    "        </div>\n" +
-    "      </div>\n" +
-    "    </div>\n" +
-    "  </div>\n" +
-    "</div>\n"
+    "</seco-facet-wrapper>\n"
   );
 
 }]);

@@ -27,8 +27,8 @@
             var o = new this.objectClass();
 
             o.value = parseValue(obj.value);
-            o.text = obj.facet_text.value;
-            o.count = parseInt(obj.cnt.value);
+            o.text = _.get(obj, 'facet_text.value');
+            o.count = obj.cnt ? parseInt(obj.cnt.value) : undefined;
 
             return o;
         }
@@ -43,10 +43,10 @@
             if (_.includes(value.type, 'literal') && value.datatype === 'http://www.w3.org/2001/XMLSchema#integer') {
                 return value.value;
             }
-            if (_.includes(value.type, 'literal') && value.datatype === 'http://www.w3.org/2001/XMLSchema#date') {
-                return '"' + value.value + '"^^<http://www.w3.org/2001/XMLSchema#date>';
+            if (_.includes(value.type, 'literal') && value.datatype) {
+                return '"' + value.value + '"^^<' + value.datatype + '>';
             }
-            return '"' + value.value + '"';
+            return '"' + value.value + '"' + (value['xml:lang'] ? '@' + value['xml:lang'] : '');
         }
 
     }

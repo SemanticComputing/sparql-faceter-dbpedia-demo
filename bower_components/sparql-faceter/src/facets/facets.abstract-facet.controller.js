@@ -5,7 +5,7 @@
     .controller('AbstractFacetController', AbstractFacetController);
 
     /* @ngInject */
-    function AbstractFacetController($scope, _, EVENT_FACET_CONSTRAINTS,
+    function AbstractFacetController($scope, $log, _, EVENT_FACET_CONSTRAINTS,
             EVENT_FACET_CHANGED, EVENT_REQUEST_CONSTRAINTS, EVENT_INITIAL_CONSTRAINTS,
             FacetImpl) {
 
@@ -14,33 +14,40 @@
         vm.isLoading = isLoading;
         vm.changed = changed;
 
+        vm.toggleFacetEnabled = toggleFacetEnabled;
         vm.disableFacet = disableFacet;
         vm.enableFacet = enableFacet;
 
         vm.getFacetSize = getFacetSize;
 
+        vm.init = init;
         vm.listener = function() { };
+        vm.listen = listen;
+        vm.update = update;
+        vm.emitChange = emitChange;
+        vm.handleUpdateSuccess = handleUpdateSuccess;
+        vm.handleError = handleError;
 
         vm.getSpinnerKey = getSpinnerKey;
 
         // Wait until the options attribute has been set.
         var watcher = $scope.$watch('options', function(val) {
             if (val) {
-                init(FacetImpl);
+                vm.init();
                 watcher();
             }
         });
 
-        function init(Facet) {
+        function init(facet) {
             var initListener = $scope.$on(EVENT_INITIAL_CONSTRAINTS, function(event, cons) {
                 var opts = _.cloneDeep($scope.options);
                 opts = angular.extend({}, cons.config, opts);
                 opts.initial = cons.facets;
-                vm.facet = new Facet(opts);
+                vm.facet = facet || new FacetImpl(opts);
                 if (vm.facet.isEnabled()) {
-                    vm.previousVal = vm.facet.getSelectedValue();
-                    listen();
-                    update(cons);
+                    vm.previousVal = _.cloneDeep(vm.facet.getSelectedValue());
+                    vm.listen();
+                    vm.update(cons);
                 }
                 // Unregister initListener
                 initListener();
@@ -58,13 +65,13 @@
 
         function listen() {
             vm.listener = $scope.$on(EVENT_FACET_CONSTRAINTS, function(event, cons) {
-                update(cons);
+                vm.update(cons);
             });
         }
 
         function update(constraints) {
             vm.isLoadingFacet = true;
-            return vm.facet.update(constraints).then(handleUpdateSuccess, handleError);
+            return vm.facet.update(constraints).then(vm.handleUpdateSuccess, handleError);
         }
 
         function isLoading() {
@@ -77,32 +84,39 @@
                 vm.isLoadingFacet = false;
                 return;
             }
-            vm.previousVal = _.clone(val);
+            vm.previousVal = _.cloneDeep(val);
             var args = {
                 id: vm.facet.facetId,
                 constraint: vm.facet.getConstraint(),
-                value: val
+                value: val,
+                priority: vm.facet.getPriority()
             };
             $scope.$emit(EVENT_FACET_CHANGED, args);
         }
 
         function changed() {
             vm.isLoadingFacet = true;
-            emitChange();
+            vm.emitChange();
+        }
+
+        function toggleFacetEnabled() {
+            vm.facet.isEnabled() ? vm.disableFacet() : vm.enableFacet();
         }
 
         function enableFacet() {
-            listen();
+            vm.listen();
             vm.isLoadingFacet = true;
             vm.facet.enable();
-            emitChange(true);
+            vm.init(vm.facet);
         }
 
         function disableFacet() {
-            vm.listener();
+            if (vm.listener) {
+                vm.listener();
+            }
             vm.facet.disable();
             var forced = vm.facet.getSelectedValue() ? true : false;
-            emitChange(forced);
+            vm.emitChange(forced);
         }
 
         function handleUpdateSuccess() {
@@ -112,17 +126,15 @@
 
         function handleError(error) {
             if (!vm.facet.hasError()) {
+                $log.info(error);
                 // The facet has recovered from the error.
                 // This happens when an update has been cancelled
                 // due to changes in facet selections.
                 return;
             }
+            $log.error(error.statusText || error);
             vm.isLoadingFacet = false;
-            if (error) {
-                vm.error = error;
-            } else {
-                vm.error = 'Error';
-            }
+            vm.error = 'Error' + (error.status ? ' (' + error.status + ')' : '');
         }
 
         function getFacetSize(facetStates) {

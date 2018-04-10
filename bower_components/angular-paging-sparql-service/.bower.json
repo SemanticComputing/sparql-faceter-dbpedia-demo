@@ -1,6 +1,5 @@
 {
   "name": "angular-paging-sparql-service",
-  "version": "0.4.0",
   "authors": [
     "Erkki Heino <erkki.heino@aalto.fi>"
   ],
@@ -20,13 +19,14 @@
     "test",
     "tests"
   ],
-  "_release": "0.4.0",
+  "version": "0.9.0",
+  "_release": "0.9.0",
   "_resolution": {
     "type": "version",
-    "tag": "0.4.0",
-    "commit": "31946ba50833d502606089e5650f31c79515ec88"
+    "tag": "0.9.0",
+    "commit": "5fc2575c93522b49ddb654f63385b400797bb585"
   },
   "_source": "https://github.com/SemanticComputing/angular-paging-sparql-service.git",
-  "_target": "^0.4.0",
+  "_target": "^0.9.0",
   "_originalSource": "angular-paging-sparql-service"
 }

@@ -9,19 +9,22 @@
     .factory('BasicFacet', BasicFacet);
 
     /* ngInject */
-    function BasicFacet($q, _, SparqlService, facetMapperService, NO_SELECTION_STRING) {
+    function BasicFacet($q, _, facetEndpoint, NO_SELECTION_STRING, PREFIXES) {
 
         BasicFacetConstructor.prototype.update = update;
         BasicFacetConstructor.prototype.getState = getState;
         BasicFacetConstructor.prototype.fetchState = fetchState;
+        BasicFacetConstructor.prototype.fetchFacetTextFromServices = fetchFacetTextFromServices;
+        BasicFacetConstructor.prototype.finalizeFacetValues = finalizeFacetValues;
         BasicFacetConstructor.prototype.getConstraint = getConstraint;
         BasicFacetConstructor.prototype.getTriplePattern = getTriplePattern;
         BasicFacetConstructor.prototype.getSpecifier = getSpecifier;
-        BasicFacetConstructor.prototype.getPreferredLang = getPreferredLang;
+        BasicFacetConstructor.prototype.getPriority = getPriority;
         BasicFacetConstructor.prototype.buildQueryTemplate = buildQueryTemplate;
         BasicFacetConstructor.prototype.buildQuery = buildQuery;
-        BasicFacetConstructor.prototype.buildServiceUnions = buildServiceUnions;
         BasicFacetConstructor.prototype.buildSelections = buildSelections;
+        BasicFacetConstructor.prototype.buildLabelPart = buildLabelPart;
+        BasicFacetConstructor.prototype.removeOwnConstraint = removeOwnConstraint;
         BasicFacetConstructor.prototype.getOtherSelections = getOtherSelections;
         BasicFacetConstructor.prototype.getDeselectUnionTemplate = getDeselectUnionTemplate;
         BasicFacetConstructor.prototype.disable = disable;
@@ -42,39 +45,25 @@
 
             var labelPart =
             ' OPTIONAL {' +
-            '  ?value skos:prefLabel ?lbl . ' +
+            '  ?labelValue skos:prefLabel ?lbl . ' +
             '  FILTER(langMatches(lang(?lbl), "<PREF_LANG>")) .' +
             ' }' +
             ' OPTIONAL {' +
-            '  ?value rdfs:label ?lbl . ' +
+            '  ?labelValue rdfs:label ?lbl . ' +
             '  FILTER(langMatches(lang(?lbl), "<PREF_LANG>")) .' +
-            ' }' +
-            ' OPTIONAL {' +
-            '  ?value skos:prefLabel ?lbl . ' +
-            '  FILTER(langMatches(lang(?lbl), "")) .' +
-            ' }' +
-            ' OPTIONAL {' +
-            '  ?value rdfs:label ?lbl . ' +
-            '  FILTER(langMatches(lang(?lbl), "")) .' +
-            ' } ';
+            ' }';
 
-            var serviceLabelPart =
-            ' { ' +
+            var serviceQueryTemplate = PREFIXES +
+            ' SELECT DISTINCT ?facet_text ?value {' +
+            '  VALUES ?value { <VALUES> } ' +
             '  ?value skos:prefLabel|rdfs:label [] . ' +
-               labelPart +
-            '  FILTER(BOUND(?lbl)) ' +
-            ' }' +
-            ' UNION { ' +
-            '  FILTER(!ISURI(?value)) ' +
-            '  BIND(STR(?value) AS ?lbl) ' +
-            '  FILTER(BOUND(?lbl)) ' +
-            ' } ';
+            '  BIND(?value AS ?labelValue) ' +
+            '  <LABEL_PART>' +
+            '  BIND(?lbl AS ?facet_text)' +
+            '  FILTER(?facet_text != "")' +
+            ' }';
 
-            var queryTemplate =
-            ' PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ' +
-            ' PREFIX skos: <http://www.w3.org/2004/02/skos/core#> ' +
-            ' PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> ' +
-
+            var queryTemplate = PREFIXES +
             ' SELECT DISTINCT ?cnt ?facet_text ?value WHERE {' +
             ' { ' +
             '  { ' +
@@ -91,25 +80,22 @@
             '      <SELECTIONS> ' +
             '     } GROUP BY ?value ' +
             '    } ' +
-            '    FILTER(BOUND(?value)) ' +
+            '    FILTER(BOUND(?value))' +
+            '    BIND(COALESCE(?value, <http://ldf.fi/NONEXISTENT_URI>) AS ?labelValue) ' +
             '    <LABEL_PART> ' +
-            '    <OTHER_SERVICES> ' +
-            '    BIND(COALESCE(?lbl, IF(ISURI(?value), REPLACE(STR(?value),' +
-            '     "^.+/(.+?)$", "$1"), STR(?value))) AS ?facet_text)' +
-            '   } ORDER BY ?facet_text ' +
+            '    BIND(COALESCE(?lbl, IF(!ISURI(?value), ?value, "")) AS ?facet_text)' +
+            '   } ' +
             '  }' +
             ' } ';
 
             var defaultConfig = {
                 preferredLang: 'fi',
                 queryTemplate: queryTemplate,
+                serviceQueryTemplate: serviceQueryTemplate,
                 labelPart: labelPart,
-                noSelectionString: NO_SELECTION_STRING
+                noSelectionString: NO_SELECTION_STRING,
+                usePost: true
             };
-
-            if (options.services) {
-                defaultConfig.labelPart = serviceLabelPart;
-            }
 
             this.config = angular.extend({}, defaultConfig, options);
 
@@ -123,7 +109,7 @@
                 this.disable();
             }
 
-            this.endpoint = new SparqlService(this.config.endpointUrl);
+            this.endpoint = facetEndpoint.getEndpoint(this.config);
 
             // Initial value
             var constVal = _.get(options, 'initial.' + this.facetId);
@@ -133,7 +119,9 @@
                 this.selectedValue = { value: constVal.value };
             }
 
+            this.labelPart = this.buildLabelPart();
             this.queryTemplate = this.buildQueryTemplate(this.config.queryTemplate);
+            this.serviceQueryTemplate = this.buildQueryTemplate(this.config.serviceQueryTemplate);
         }
 
         function update(constraints) {
@@ -141,16 +129,17 @@
             if (!self.isEnabled()) {
                 return $q.when();
             }
-            if (!self._error && self.previousConstraints && _.isEqual(constraints.constraint,
-                    self.previousConstraints)) {
-                return $q.when();
+
+            var otherCons = this.getOtherSelections(constraints.constraint);
+            if (self.otherCons === otherCons) {
+                return $q.when(self.state);
             }
-            self.previousConstraints = _.clone(constraints.constraint);
+            self.otherCons = otherCons;
 
             self._isBusy = true;
 
             return self.fetchState(constraints).then(function(state) {
-                if (!_.isEqual(self.previousConstraints, constraints.constraint)) {
+                if (!_.isEqual(otherCons, self.otherCons)) {
                     return $q.reject('Facet state changed');
                 }
                 self.state = state;
@@ -170,13 +159,53 @@
 
             var query = self.buildQuery(constraints.constraint);
 
-            return self.endpoint.getObjects(query).then(function(results) {
+            return self.endpoint.getObjectsNoGrouping(query).then(function(results) {
+                if (self.config.services) {
+                    return self.fetchFacetTextFromServices(results);
+                }
                 self._error = false;
-                return facetMapperService.makeObjectListNoGrouping(results);
+                return results;
+            }).then(function(res) {
+                res = self.finalizeFacetValues(res);
+                self._error = false;
+                return res;
             }).catch(function(error) {
                 self._isBusy = false;
                 self._error = true;
                 return $q.reject(error);
+            });
+        }
+
+        function finalizeFacetValues(results) {
+            results.forEach(function(r) {
+                if (!r.text) {
+                    r.text = r.value.replace(/^.+\/(.+?)>$/, '$1');
+                }
+            });
+            return [_.head(results)].concat(_.sortBy(_.tail(results), 'text'));
+        }
+
+        function fetchFacetTextFromServices(results) {
+            var self = this;
+            var emptyLabels = _.filter(results, function(r) { return !r.text; });
+            var values = _.map(emptyLabels, function(r) { return r.value; });
+            var promises = _.map(self.config.services, function(s) {
+                var endpointConfig = {
+                    endpointUrl: s.replace(/[<>]/g, ''),
+                    usePost: self.config.usePost,
+                    headers: self.config.headers
+                };
+                var endpoint = facetEndpoint.getEndpoint(endpointConfig);
+                var qry = self.serviceQueryTemplate
+                    .replace(/<VALUES>/g, values.join(' '));
+                return endpoint.getObjectsNoGrouping(qry);
+            });
+            return $q.all(promises).then(function(res) {
+                var all = _.flatten(res);
+                all.forEach(function(objWithText) {
+                    _.find(results, ['value', objWithText.value]).text = objWithText.text;
+                });
+                return results;
             });
         }
 
@@ -192,6 +221,10 @@
             return this.specifier ? this.specifier : '';
         }
 
+        function getPriority() {
+            return this.config.priority;
+        }
+
         function getConstraint() {
             if (!this.getSelectedValue()) {
                 return;
@@ -205,18 +238,13 @@
             return this.deselectUnionTemplate;
         }
 
-        function getPreferredLang() {
-            return this.config.preferredLang;
-        }
-
         // Build the facet query
         function buildQuery(constraints) {
             constraints = constraints || [];
+            var otherConstraints = this.removeOwnConstraint(constraints);
             var query = this.queryTemplate
-                .replace(/<OTHER_SERVICES>/g, this.buildServiceUnions())
-                .replace(/<OTHER_SELECTIONS>/g, this.getOtherSelections(constraints))
-                .replace(/<SELECTIONS>/g, this.buildSelections(constraints))
-                .replace(/<PREF_LANG>/g, this.getPreferredLang());
+                .replace(/<OTHER_SELECTIONS>/g, otherConstraints.join(' '))
+                .replace(/<SELECTIONS>/g, this.buildSelections(otherConstraints));
 
             return query;
         }
@@ -228,24 +256,23 @@
             return constraints;
         }
 
-        function getOtherSelections(constraints) {
+        function removeOwnConstraint(constraints) {
             var ownConstraint = this.getConstraint();
-            var deselections = _.reject(constraints, function(v) { return v === ownConstraint; });
-            return deselections.join(' ');
+            return _.reject(constraints, function(v) { return v === ownConstraint; });
         }
 
-        function buildServiceUnions() {
+        function getOtherSelections(constraints) {
+            return this.removeOwnConstraint(constraints).join(' ');
+        }
+
+        function buildLabelPart() {
             var self = this;
-            var unions = '';
-            _.forEach(self.config.services, function(service) {
-                unions = unions +
-                ' UNION { ' +
-                '  SERVICE ' + service + ' { ' +
-                    self.config.labelPart +
-                '  } ' +
-                ' } ';
+            var res = '';
+            var langs = _.castArray(self.config.preferredLang).concat(['']);
+            langs.forEach(function(lang) {
+                res += self.config.labelPart.replace(/<PREF_LANG>/g, lang);
             });
-            return unions;
+            return res;
         }
 
         // Replace placeholders in the query template using the configuration.
@@ -253,7 +280,7 @@
             var templateSubs = [
                 {
                     placeHolder: /<LABEL_PART>/g,
-                    value: this.config.labelPart
+                    value: this.labelPart
                 },
                 {
                     placeHolder: /<NO_SELECTION_STRING>/g,

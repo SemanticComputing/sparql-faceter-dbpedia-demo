@@ -15,20 +15,9 @@ angular.module('myApp', ['sparql'])
 
 ## Usage
 
-Provided injectable services:
+See the [documentation](http://semanticcomputing.github.io/angular-paging-sparql-service/#/api).
 
-`SparqlService` provides a constructor for a simple SPARQL query service
-that simply returns results (bindings) based on a SPARQL query.
-
-`AdvancedSparqlService` provides the same service as SparqlService, but adds
-paging support for queries.
-
-`QueryBuilderService` can be used to construct pageable SPARQL queries.
-
-`objectMapperService` maps SPARQL results to objects.
-
-Better documentation to come.
-For now, see comments in the source code, and example projects:
+Example projects using the module:
 
 * [SPARQL Faceter DBpedia demo](https://github.com/SemanticComputing/sparql-faceter-dbpedia-demo)
 * [WarSampo death records](https://github.com/SemanticComputing/WarSampo-death-records)
