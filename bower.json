@@ -19,6 +19,6 @@
   "dependencies": {
     "bootstrap": "^3.3.6",
     "sparql-faceter": "^1.10.0",
-    "angular-paging-sparql-service": "^0.4.0"
+    "angular-paging-sparql-service": "^0.9.0"
   }
 }
