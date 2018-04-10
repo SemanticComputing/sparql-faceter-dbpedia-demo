@@ -83,6 +83,7 @@
         var facetOptions = {
             endpointUrl: endpointUrl, // required
             rdfClass: rdfClass, // optional
+            usePost: false,
             // constraint: constraint, // optional, not used in this demo
             preferredLang : 'en' // required
         };
@@ -147,6 +148,7 @@
             queryTemplate: queryTemplate, // required
             resultsPerPage: 10, // optional (default is 10)
             pagesPerQuery: 1, // optional (default is 1)
+            usePost: false,
             paging: true // optional (default is true), if true, enable paging of the results
         };
 
