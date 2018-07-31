@@ -7,19 +7,24 @@
     /* @ngInject */
     function AbstractFacetController($scope, $log, _, EVENT_FACET_CONSTRAINTS,
             EVENT_FACET_CHANGED, EVENT_REQUEST_CONSTRAINTS, EVENT_INITIAL_CONSTRAINTS,
-            FacetImpl) {
+            FacetChartService, FacetImpl) {
 
         var vm = this;
 
         vm.isLoading = isLoading;
+        vm.isChartVisible = isChartVisible;
+        vm.hasChartButton = hasChartButton;
+
         vm.changed = changed;
 
         vm.toggleFacetEnabled = toggleFacetEnabled;
         vm.disableFacet = disableFacet;
         vm.enableFacet = enableFacet;
+        vm.toggleChart = toggleChart;
 
         vm.getFacetSize = getFacetSize;
 
+        vm.initOptions = initOptions;
         vm.init = init;
         vm.listener = function() { };
         vm.listen = listen;
@@ -27,6 +32,8 @@
         vm.emitChange = emitChange;
         vm.handleUpdateSuccess = handleUpdateSuccess;
         vm.handleError = handleError;
+        vm.handleChartClick = handleChartClick;
+        vm.updateChartData = updateChartData;
 
         vm.getSpinnerKey = getSpinnerKey;
 
@@ -38,21 +45,29 @@
             }
         });
 
-        function init(facet) {
+        function init() {
             var initListener = $scope.$on(EVENT_INITIAL_CONSTRAINTS, function(event, cons) {
-                var opts = _.cloneDeep($scope.options);
-                opts = angular.extend({}, cons.config, opts);
-                opts.initial = cons.facets;
-                vm.facet = facet || new FacetImpl(opts);
-                if (vm.facet.isEnabled()) {
-                    vm.previousVal = _.cloneDeep(vm.facet.getSelectedValue());
-                    vm.listen();
-                    vm.update(cons);
-                }
+                vm.initOptions(cons);
                 // Unregister initListener
                 initListener();
             });
             $scope.$emit(EVENT_REQUEST_CONSTRAINTS);
+        }
+
+        function initOptions(cons) {
+            cons = cons || {};
+            var opts = _.cloneDeep($scope.options);
+            opts = angular.extend({}, cons.config, opts);
+            opts.initial = cons.facets;
+            vm.facet = vm.facet || new FacetImpl(opts);
+            if (vm.facet.isEnabled()) {
+                vm.previousVal = _.cloneDeep(vm.facet.getSelectedValue());
+                vm.listen();
+                vm.update(cons);
+            }
+            if (opts.chart) {
+                vm.chart = vm.chart || new FacetChartService({ facet: vm.facet, scope: $scope });
+            }
         }
 
         var spinnerKey;
@@ -107,7 +122,7 @@
             vm.listen();
             vm.isLoadingFacet = true;
             vm.facet.enable();
-            vm.init(vm.facet);
+            vm.init();
         }
 
         function disableFacet() {
@@ -120,8 +135,32 @@
         }
 
         function handleUpdateSuccess() {
+            vm.updateChartData();
             vm.error = undefined;
             vm.isLoadingFacet = false;
+        }
+
+        function toggleChart() {
+            vm._showChart = !vm._showChart;
+        }
+
+        function isChartVisible() {
+            return vm._showChart;
+        }
+
+        function hasChartButton() {
+            return vm.facet.isEnabled() && !!vm.chart;
+        }
+
+        function updateChartData() {
+            if (vm.chart) {
+                return vm.chart.updateChartData();
+            }
+        }
+
+        function handleChartClick(chartElement) {
+            vm.chart.handleChartClick(chartElement);
+            return vm.changed();
         }
 
         function handleError(error) {
