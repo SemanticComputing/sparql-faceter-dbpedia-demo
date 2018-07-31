@@ -66,7 +66,7 @@
           </tbody>
         </table>
         <!-- Pagination -->
-        <uib-pagination
+        <div uib-pagination
           class="pagination-sm"
           max-size="10"
           boundary-links="true"
@@ -75,7 +75,7 @@
           ng-model="vm.pageNo"
           ng-disabled="vm.isLoadingResults"
           ng-change="vm.getPage()">
-        </uib-pagination>
+        </div>
       </div>
     </div>
   </div>
@@ -88,11 +88,12 @@
 <script src="bower_components/lodash/dist/lodash.min.js"></script>
 <script src="bower_components/angular/angular.js"></script>
 <script src="bower_components/angular-bootstrap/ui-bootstrap-tpls.min.js"></script>
-<!-- <script src="bower_components/spin.js/spin.js"></script> -->
 <script src="bower_components/angular-spinner/dist/angular-spinner.min.js"></script>
 <script src="bower_components/checklist-model/checklist-model.js"></script>
 <script src="bower_components/angular-paging-sparql-service/dist/sparql-service.js"></script>
 <script src="bower_components/sparql-faceter/dist/semantic-faceted-search.js"></script>
+<script src="bower_components/chart.js/dist/Chart.js"></script>
+<script src="bower_components/angular-chart.js/dist/angular-chart.js"></script>
 
 <script src="dbpedia-service.js"></script>
 <script src="demo-controller.js"></script>

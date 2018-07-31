@@ -47,18 +47,21 @@
                 facetId: 'genre',
                 predicate: '<http://dbpedia.org/ontology/genre>',
                 enabled: true,
+                chart: true,
                 name: 'Genre'
             },
             birthPlace: {
                 facetId: 'birthPlace',
                 predicate:'<http://dbpedia.org/ontology/birthPlace>',
                 enabled: true,
+                chart: true,
                 name: 'Birth Place'
             },
             citizenship: {
                 facetId: 'citizenship',
                 predicate: '<http://dbpedia.org/ontology/citizenship>',
                 enabled: true,
+                chart: true,
                 name: 'Citizenship'
             }
         };
